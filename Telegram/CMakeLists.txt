@@ -1713,6 +1713,8 @@ PRIVATE
     mtproto/details/mtproto_web_proxy_socket.h
     mtproto/facade.cpp
     mtproto/facade.h
+    mtproto/http_transport.cpp
+    mtproto/http_transport.h
     mtproto/network_context.cpp
     mtproto/network_context.h
     mtproto/mtp_instance.cpp

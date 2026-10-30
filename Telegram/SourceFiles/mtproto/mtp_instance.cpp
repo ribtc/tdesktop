@@ -379,9 +379,9 @@ Instance::Private::Private(
 	_instance->network().changes(
 	) | rpl::on_next([=] {
 		_domainResolver = nullptr;
+		_httpUnixtimeLoader = nullptr;
 		if (_configLoader) {
-			_configLoader->setProxyEnabled(
-				_instance->network().snapshot().proxy.type != ProxyData::Type::None);
+			_configLoader->networkChanged();
 		}
 		for (const auto &[shiftedDcId, session] : _sessions) {
 			session->reInitConnection();
@@ -545,8 +545,7 @@ void Instance::Private::requestConfig() {
 		[=](const MTPConfig &result) { configLoadDone(result); },
 		[=](const Error &error, const Response &) {
 			return configLoadFail(error);
-		},
-		(_instance->network().snapshot().proxy.type != ProxyData::Type::None));
+		});
 	_configLoader->load();
 }
 
@@ -566,16 +565,23 @@ void Instance::Private::badConfigurationError(const ProxyData &proxy) {
 }
 
 void Instance::Private::syncHttpUnixtime() {
-	if (_instance->network().snapshot().state != NetworkState::Legacy
+	const auto route = _instance->network().snapshot();
+	if (!route.httpProxy()
 		|| base::unixtime::http_valid()
 		|| _httpUnixtimeLoader) {
 		return;
 	}
-	_httpUnixtimeLoader = std::make_unique<SpecialConfigRequest>([=] {
-		InvokeQueued(_instance, [=] {
-			_httpUnixtimeLoader = nullptr;
-		});
-	}, isTestMode(), configValues().txtDomainString);
+	_httpUnixtimeLoader = std::make_unique<SpecialConfigRequest>(
+		route,
+		[=] {
+			InvokeQueued(_instance, [=] {
+				if (route.current()) {
+					_httpUnixtimeLoader = nullptr;
+				}
+			});
+		},
+		isTestMode(),
+		configValues().txtDomainString);
 }
 
 void Instance::Private::restartedByTimeout(ShiftedDcId shiftedDcId) {

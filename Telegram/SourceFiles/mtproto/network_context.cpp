@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/network_context.h"
 
+#include <QtNetwork/QHostAddress>
+
 namespace MTP {
 
 bool NetworkSnapshot::current() const {
@@ -18,6 +20,21 @@ bool NetworkSnapshot::allowed() const {
 		&& (state == NetworkState::Legacy || state == NetworkState::Ready);
 }
 
+std::optional<QNetworkProxy> NetworkSnapshot::httpProxy() const {
+	if (!allowed()
+		|| proxy.type != ProxyData::Type::Socks5
+		|| !proxy.valid()
+		|| QHostAddress(proxy.host).isNull()) {
+		return std::nullopt;
+	}
+	return QNetworkProxy(
+		QNetworkProxy::Socks5Proxy,
+		proxy.host,
+		proxy.port,
+		proxy.user,
+		proxy.password);
+}
+
 NetworkContext::NetworkContext(Mode mode) {
 	_snapshot.state = (mode == Mode::Legacy)
 		? NetworkState::Legacy
@@ -27,6 +44,7 @@ NetworkContext::NetworkContext(Mode mode) {
 
 NetworkContext::~NetworkContext() {
 	_snapshot._current->store(false);
+	_changes.fire({});
 }
 
 NetworkSnapshot NetworkContext::snapshot() const {

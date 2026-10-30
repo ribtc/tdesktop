@@ -2,7 +2,19 @@
 
 规格：[GitHub #1](https://github.com/ribtc/tdesktop/issues/1)。
 
-状态：拆分草案，等待确认粒度与依赖；尚未发布子 issue，尚未开始产品代码实现。
+状态：拆分已确认，子 issue 与原生依赖关系已发布，代码实现进行中。
+
+| 条目 | GitHub issue |
+| --- | --- |
+| 1 | [账号网络上下文 #2](https://github.com/ribtc/tdesktop/issues/2) |
+| 2 | [绑定与迁移 #3](https://github.com/ribtc/tdesktop/issues/3) |
+| 3 | [文件与辅助请求 #4](https://github.com/ribtc/tdesktop/issues/4) |
+| 4 | [通话 #5](https://github.com/ribtc/tdesktop/issues/5) |
+| 5 | [内置网页 #6](https://github.com/ribtc/tdesktop/issues/6) |
+| 6 | [账号上限与快速切换 #7](https://github.com/ribtc/tdesktop/issues/7) |
+| 7 | [账号管理 #8](https://github.com/ribtc/tdesktop/issues/8) |
+| 8 | [代理管理 #9](https://github.com/ribtc/tdesktop/issues/9) |
+| 9 | [集成与容量验收 #10](https://github.com/ribtc/tdesktop/issues/10) |
 
 所有条目在同一集成分支汇合。条目 1 是为共享网络配置进行的前置重构；后续条目逐步接入账号策略并验证用户行为。单个条目完成不代表整个产品可以发布。严格隔离启用后，尚未接入的具体联网路径先阻断，不能暂时借用全局代理或直连。
 

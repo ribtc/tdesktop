@@ -664,6 +664,9 @@ void MainWindow::updatePalette() {
 
 int MainWindow::computeMinWidth() const {
 	auto result = st::windowMinWidth;
+	if (controller().isPrimary() && controller().maybeSession()) {
+		result += st::windowAccountsWidth;
+	}
 	if (_rightColumn) {
 		result += _rightColumn->width();
 	}

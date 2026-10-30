@@ -9360,3 +9360,49 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_account_http_blocked" = "Download blocked. Verify this account's proxy or bind an available proxy, then try again.";
 "lng_account_http_unsupported" = "This download uses an external HTTP service and requires a SOCKS5 proxy. Telegram files remain available through MTProto.";
+
+"lng_management_back" = "Back to chats";
+"lng_management_accounts" = "Account management";
+"lng_management_proxies" = "Proxy isolation";
+"lng_management_add" = "Add account";
+"lng_management_groups" = "Manage groups";
+"lng_management_filter_group" = "Group filter";
+"lng_management_filter_status" = "Status filter";
+"lng_management_all" = "All";
+"lng_management_ungrouped" = "Ungrouped";
+"lng_management_ready" = "Proxy verified";
+"lng_management_checking" = "Checking · blocked";
+"lng_management_failed" = "Proxy failed · blocked";
+"lng_management_unbound" = "Unbound · blocked";
+"lng_management_search" = "Search names, phone numbers or tags";
+"lng_management_select_page" = "Select current page";
+"lng_management_select_all" = "Select all matching accounts";
+"lng_management_clear" = "Clear selection";
+"lng_management_move" = "Move to group";
+"lng_management_bind" = "Bind proxy";
+"lng_management_previous" = "Previous page";
+"lng_management_next" = "Next page";
+"lng_management_summary" = "{amount} matches · {selected} selected · Page {current} of {total}";
+"lng_management_actions" = "Account actions";
+"lng_management_group_name" = "Group name";
+"lng_management_create_group" = "Create group";
+"lng_management_rename" = "Rename";
+"lng_management_delete" = "Delete";
+"lng_management_delete_group_confirm" = "Delete this group? Its accounts will become ungrouped. Accounts and proxy bindings are kept.";
+"lng_management_open" = "Open account";
+"lng_management_tags" = "Tags (comma separated)";
+"lng_management_unreadable" = "Account metadata cannot be read. Existing data has been preserved.";
+"lng_management_shared" = "This proxy currently has {amount} account bindings. You are applying it to {selected} selected accounts, adding {added} new bindings. Accounts sharing a proxy may share the same public IP. The target list below is fixed.";
+"lng_management_rejected" = "Failed: account removed or proxy unavailable";
+"lng_management_results" = "Per-account results";
+
+"lng_management_moved" = "Group updated";
+"lng_management_move_failed" = "Failed: account or group unavailable";
+
+"lng_management_replaced" = "Binding changed after this operation";
+
+"lng_management_selection" = "Selection";
+"lng_management_account_column" = "Account";
+"lng_management_group_column" = "Group";
+"lng_management_proxy_column" = "Bound proxy";
+"lng_management_empty" = "No matching accounts";

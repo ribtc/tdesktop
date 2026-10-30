@@ -29,6 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/network_reachability.h"
 #include "test/test_rpc_retry.h"
 
+#include <algorithm>
+#include <condition_variable>
+#include <mutex>
+
 namespace MTP {
 namespace {
 
@@ -38,6 +42,111 @@ constexpr auto kConfigBecomesOldForBlockedIn = 8 * crl::time(1000);
 using namespace details;
 
 std::atomic<int> GlobalAtomicRequestId = 0;
+
+class SessionThreads final {
+public:
+	SessionThreads();
+	~SessionThreads();
+
+	[[nodiscard]] static std::shared_ptr<SessionThreads> Acquire();
+	[[nodiscard]] int allocateSlot();
+	[[nodiscard]] not_null<QThread*> get(int slot, ShiftedDcId dcId);
+
+private:
+	const int _shards;
+	int _nextSlot = 0;
+	std::vector<std::unique_ptr<QThread>> _threads;
+
+};
+
+class SessionWorkers final {
+public:
+	void add();
+	void finish();
+	void wait();
+
+private:
+	std::mutex _mutex;
+	std::condition_variable _condition;
+	int _pending = 0;
+
+};
+
+SessionThreads::SessionThreads()
+: _shards(std::clamp(QThread::idealThreadCount() / 2, 2, 4))
+, _threads(4 * _shards) {
+}
+
+SessionThreads::~SessionThreads() {
+	for (const auto &thread : _threads) {
+		if (thread) {
+			thread->quit();
+		}
+	}
+	for (const auto &thread : _threads) {
+		if (thread) {
+			thread->wait();
+		}
+	}
+}
+
+std::shared_ptr<SessionThreads> SessionThreads::Acquire() {
+	Expects(QThread::currentThread() == QCoreApplication::instance()->thread());
+
+	static auto weak = std::weak_ptr<SessionThreads>();
+	auto result = weak.lock();
+	if (!result) {
+		result = std::make_shared<SessionThreads>();
+		weak = result;
+	}
+	return result;
+}
+
+int SessionThreads::allocateSlot() {
+	const auto result = _nextSlot;
+	_nextSlot = (_nextSlot + 1) % _shards;
+	return result;
+}
+
+not_null<QThread*> SessionThreads::get(int slot, ShiftedDcId dcId) {
+	auto group = 0;
+	auto offset = slot;
+	if (isDownloadDcId(dcId)) {
+		group = 2;
+		offset += GetDcIdShift(dcId) - kBaseDownloadDcShift + BareDcId(dcId);
+	} else if (isUploadDcId(dcId)) {
+		group = 3;
+		offset += GetDcIdShift(dcId) - kBaseUploadDcShift + BareDcId(dcId);
+	} else if (dcId != BareDcId(dcId)) {
+		group = 1;
+	}
+	const auto index = group * _shards + (offset % _shards);
+	auto &thread = _threads[index];
+	if (!thread) {
+		thread = std::make_unique<QThread>();
+		thread->setObjectName(u"MTP Session Pool (%1)"_q.arg(index));
+		thread->start();
+	}
+	return thread.get();
+}
+
+void SessionWorkers::add() {
+	const auto lock = std::lock_guard(_mutex);
+	++_pending;
+}
+
+void SessionWorkers::finish() {
+	const auto lock = std::lock_guard(_mutex);
+	Expects(_pending > 0);
+	if (!--_pending) {
+		_condition.notify_all();
+	}
+}
+
+void SessionWorkers::wait() {
+	auto lock = std::unique_lock(_mutex);
+	_condition.wait(lock, [&] { return !_pending; });
+}
 
 } // namespace
 
@@ -233,9 +342,9 @@ private:
 	const std::unique_ptr<Config> _config;
 	const std::shared_ptr<base::NetworkReachability> _networkReachability;
 
-	std::unique_ptr<QThread> _mainSessionThread;
-	std::unique_ptr<QThread> _otherSessionsThread;
-	std::vector<std::unique_ptr<QThread>> _fileSessionThreads;
+	const std::shared_ptr<SessionThreads> _sessionThreads;
+	const int _sessionThreadSlot;
+	const std::shared_ptr<SessionWorkers> _workerLifetime;
 
 	QString _deviceModelDefault;
 	QString _systemVersion;
@@ -326,11 +435,11 @@ Instance::Private::Private(
 , _instance(instance)
 , _mode(mode)
 , _config(std::move(fields.config))
-, _networkReachability(base::NetworkReachability::Instance()) {
+, _networkReachability(base::NetworkReachability::Instance())
+, _sessionThreads(SessionThreads::Acquire())
+, _sessionThreadSlot(_sessionThreads->allocateSlot())
+, _workerLifetime(std::make_shared<SessionWorkers>()) {
 	Expects(_config != nullptr);
-
-	const auto idealThreadPoolSize = QThread::idealThreadCount();
-	_fileSessionThreads.resize(2 * std::max(idealThreadPoolSize / 2, 1));
 
 	details::unpaused(
 	) | rpl::on_next([=] {
@@ -639,13 +748,13 @@ void Instance::Private::requestCDNConfig() {
 
 void Instance::Private::registerSessionWorker(not_null<QObject*> worker) {
 	++_sessionWorkers;
+	const auto lifetime = _workerLifetime;
+	lifetime->add();
 	const auto observer = new QObject();
 	observer->moveToThread(worker->thread());
-	QObject::connect(
-		worker->thread(),
-		&QThread::finished,
-		observer,
-		&QObject::deleteLater);
+	QObject::connect(observer, &QObject::destroyed, [lifetime] {
+		lifetime->finish();
+	});
 	// WHY: QObject emits destroyed before deleting its children. Queue the
 	// acknowledgement on the worker thread so every socket destructor has
 	// finished before the main thread can open the next route.
@@ -1830,52 +1939,7 @@ void Instance::Private::scheduleSessionDestroy(ShiftedDcId shiftedDcId) {
 
 not_null<QThread*> Instance::Private::getThreadForDc(
 		ShiftedDcId shiftedDcId) {
-	static const auto EnsureStarted = [](
-			std::unique_ptr<QThread> &thread,
-			auto name) {
-		if (!thread) {
-			thread = std::make_unique<QThread>();
-			thread->setObjectName(name());
-			thread->start();
-		}
-		return thread.get();
-	};
-	static const auto FindOne = [](
-			std::vector<std::unique_ptr<QThread>> &threads,
-			const char *prefix,
-			int index,
-			bool shift) {
-		Expects(!threads.empty());
-		Expects(!(threads.size() % 2));
-
-		const auto count = int(threads.size());
-		index %= count;
-		if (index >= count / 2) {
-			index = (count - 1) - (index - count / 2);
-		}
-		if (shift) {
-			index = (index + count / 2) % count;
-		}
-		return EnsureStarted(threads[index], [=] {
-			return QString("MTP %1 Session (%2)").arg(prefix).arg(index);
-		});
-	};
-	if (shiftedDcId == BareDcId(shiftedDcId)) {
-		return EnsureStarted(_mainSessionThread, [] {
-			return QString("MTP Main Session");
-		});
-	} else if (isDownloadDcId(shiftedDcId)) {
-		const auto index = GetDcIdShift(shiftedDcId) - kBaseDownloadDcShift;
-		const auto composed = index + BareDcId(shiftedDcId);
-		return FindOne(_fileSessionThreads, "Download", composed, false);
-	} else if (isUploadDcId(shiftedDcId)) {
-		const auto index = GetDcIdShift(shiftedDcId) - kBaseUploadDcShift;
-		const auto composed = index + BareDcId(shiftedDcId);
-		return FindOne(_fileSessionThreads, "Upload", composed, true);
-	}
-	return EnsureStarted(_otherSessionsThread, [] {
-		return QString("MTP Other Session");
-	});
+	return _sessionThreads->get(_sessionThreadSlot, shiftedDcId);
 }
 
 void Instance::Private::scheduleKeyDestroy(ShiftedDcId shiftedDcId) {
@@ -1999,22 +2063,8 @@ void Instance::Private::prepareToDestroy() {
 	}
 	_mainSession = nullptr;
 
-	auto threads = std::vector<std::unique_ptr<QThread>>();
-	threads.push_back(base::take(_mainSessionThread));
-	threads.push_back(base::take(_otherSessionsThread));
-	for (auto &thread : base::take(_fileSessionThreads)) {
-		threads.push_back(std::move(thread));
-	}
-	for (const auto &thread : threads) {
-		if (thread) {
-			thread->quit();
-		}
-	}
-	for (const auto &thread : threads) {
-		if (thread) {
-			thread->wait();
-		}
-	}
+	_sessionsToDestroy.clear();
+	_workerLifetime->wait();
 }
 
 Instance::Instance(Mode mode, Fields &&fields)

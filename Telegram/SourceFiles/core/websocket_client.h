@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/network_context.h"
 
 #include <QtCore/QByteArray>
-#include <QtNetwork/QSslSocket>
+#include <QtCore/QObject>
 
 #include <functional>
 
@@ -39,32 +39,23 @@ public:
 	std::function<void()> onActivity;
 
 private:
-	void onSslConnected();
-	void onReadyRead();
-	void sendUpgradeRequest();
-	[[nodiscard]] bool readUpgradeResponse();
-	[[nodiscard]] bool parseFrames();
-	void writeFrame(const QByteArray &payload, quint8 opcode);
-	void fail();
-
-	enum class State {
-		Idle,
-		Connecting,
-		WaitingUpgrade,
+	class Worker;
+	struct Private;
+	enum class Event {
 		Connected,
+		Text,
+		Binary,
 		Closed,
+		Activity,
 	};
 
+	void dispatch(Event event, QByteArray payload);
+	void fail();
+
 	MTP::NetworkSnapshot _route;
-	QSslSocket _socket;
-	QString _host;
-	QString _target;
-	QString _subprotocol;
-	QByteArray _key;
-	QByteArray _incoming;
-	State _state = State::Idle;
-	int _port = 0;
-	bool _failed = false;
+	std::unique_ptr<Private> _private;
+	bool _started = false;
+	bool _closed = false;
 	rpl::lifetime _lifetime;
 
 };

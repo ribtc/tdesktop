@@ -73,6 +73,10 @@ Wallet::VaultRuntime &Domain::walletKeyring() {
 	return *_walletKeyring;
 }
 
+Core::ProxyCheckQueue &Domain::proxyChecks() {
+	return _proxyChecks;
+}
+
 bool Domain::started() const {
 	return !_accounts.empty();
 }

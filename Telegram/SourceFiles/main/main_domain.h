@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "core/proxy_check_queue.h"
 
 namespace Storage {
 class Domain;
@@ -67,6 +68,7 @@ public:
 	}
 
 	[[nodiscard]] Wallet::VaultRuntime &walletKeyring();
+	[[nodiscard]] Core::ProxyCheckQueue &proxyChecks();
 
 	[[nodiscard]] auto accounts() const
 		-> const std::vector<AccountWithIndex> &;
@@ -139,6 +141,7 @@ private:
 	const std::unique_ptr<Storage::Domain> _local;
 
 	std::shared_ptr<Wallet::VaultRuntime> _walletKeyring;
+	Core::ProxyCheckQueue _proxyChecks;
 	std::vector<AccountWithIndex> _accounts;
 	rpl::event_stream<> _accountsChanges;
 	rpl::variable<Account*> _active = nullptr;

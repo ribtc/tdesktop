@@ -152,26 +152,35 @@ WebSocketClient::Worker::Worker(
 WebSocketClient::Private::Private(
 		WebSocketClient *owner,
 		MTP::NetworkSnapshot route) {
-	QMetaObject::invokeMethod(thread->dispatcher(), [&] {
-		worker = new Worker(owner, std::move(route));
-	}, Qt::BlockingQueuedConnection);
+	QMetaObject::invokeMethod(
+		thread->dispatcher(),
+		[&] {
+			worker = new Worker(owner, std::move(route));
+		},
+		Qt::BlockingQueuedConnection);
 }
 
 WebSocketClient::Private::~Private() {
-	QMetaObject::invokeMethod(thread->dispatcher(), [&] {
-		worker->close();
-		delete worker;
-	}, Qt::BlockingQueuedConnection);
+	QMetaObject::invokeMethod(
+		thread->dispatcher(),
+		[&] {
+			worker->close();
+			delete worker;
+		},
+		Qt::BlockingQueuedConnection);
 }
 
 void WebSocketClient::Worker::notify(Event event, QByteArray payload) {
-	QMetaObject::invokeMethod(_owner, [
-		owner = _owner,
-		event,
-		payload = std::move(payload)
-	] {
-		owner->dispatch(event, payload);
-	}, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		_owner,
+		[
+			owner = _owner,
+			event,
+			payload = std::move(payload)
+		] {
+			owner->dispatch(event, payload);
+		},
+		Qt::QueuedConnection);
 }
 
 void WebSocketClient::Worker::connectTo(
@@ -471,9 +480,12 @@ void WebSocketClient::connectTo(
 	}
 	_private = std::make_unique<Private>(this, _route);
 	const auto worker = _private->worker;
-	QMetaObject::invokeMethod(worker, [=] {
-		worker->connectTo(host, port, requestTarget, subprotocol);
-	}, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->connectTo(host, port, requestTarget, subprotocol);
+		},
+		Qt::QueuedConnection);
 }
 
 void WebSocketClient::sendText(const QByteArray &message) {
@@ -482,9 +494,12 @@ void WebSocketClient::sendText(const QByteArray &message) {
 		return;
 	}
 	const auto worker = _private->worker;
-	QMetaObject::invokeMethod(worker, [=] {
-		worker->sendText(message);
-	}, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->sendText(message);
+		},
+		Qt::QueuedConnection);
 }
 
 void WebSocketClient::sendBinary(const QByteArray &message) {
@@ -493,9 +508,12 @@ void WebSocketClient::sendBinary(const QByteArray &message) {
 		return;
 	}
 	const auto worker = _private->worker;
-	QMetaObject::invokeMethod(worker, [=] {
-		worker->sendBinary(message);
-	}, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->sendBinary(message);
+		},
+		Qt::QueuedConnection);
 }
 
 void WebSocketClient::close() {

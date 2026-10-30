@@ -93,7 +93,8 @@ int main(int argc, char *argv[]) try {
 		u"-addext"_q, u"subjectAltName=DNS:target.invalid"_q,
 		u"-keyout"_q, key, u"-out"_q, certificate,
 	});
-	Require(identity.waitForFinished() && identity.exitCode() == 0,
+	Require(
+		identity.waitForFinished() && identity.exitCode() == 0,
 		"Create temporary TLS fixture identity.");
 	auto ssl = QSslConfiguration::defaultConfiguration();
 	// The temporary self-signed endpoint exercises I/O, not trust validation.
@@ -112,7 +113,8 @@ int main(int argc, char *argv[]) try {
 	otherServer.start(QString::fromLocal8Bit(argv[1]), {
 		QString::fromLocal8Bit(argv[2]), certificate, key,
 	});
-	Require(otherServer.waitForStarted() && otherServer.waitForReadyRead(),
+	Require(
+		otherServer.waitForStarted() && otherServer.waitForReadyRead(),
 		"Start second account's native server.");
 	const auto otherPort = otherServer.readLine().trimmed().toInt();
 	Require(otherPort > 0 && otherPort != port, "Use distinct account proxies.");
@@ -135,23 +137,27 @@ int main(int argc, char *argv[]) try {
 	a->onClosed = [&] { ++aClosed; };
 	b.onClosed = [&] { ++bClosed; };
 	a->onText = [&](QByteArray) {
-		Require(QThread::currentThread() == app.thread(),
+		Require(
+			QThread::currentThread() == app.thread(),
 			"Text callbacks run on the client thread.");
 		++aMessages;
 	};
 	b.onBinary = [&](QByteArray message) {
-		Require(QThread::currentThread() == app.thread(),
+		Require(
+			QThread::currentThread() == app.thread(),
 			"Binary callbacks run on the client thread.");
 		bMessage = message;
 	};
 	b.onText = [&](QByteArray) { ++bTextMessages; };
 	a->connectTo(u"target.invalid"_q, 443, u"/"_q, {});
 	b.connectTo(u"target.invalid"_q, 443, u"/"_q, {});
-	Require(Wait([&] { return aConnected && bConnected; }),
+	Require(
+		Wait([&] { return aConnected && bConnected; }),
 		"Two account WebSockets connect through TLS above descriptor 1100.");
 	a->sendText("first");
 	b.sendBinary("binary");
-	Require(Wait([&] { return aMessages == 1 && bMessage == "binary"; }),
+	Require(
+		Wait([&] { return aMessages == 1 && bMessage == "binary"; }),
 		"Both account WebSockets exchange frames above descriptor 1100.");
 	a->sendText("stale");
 	auto observed = server.readAllStandardOutput();
@@ -161,15 +167,18 @@ int main(int argc, char *argv[]) try {
 	}
 	routeA.block();
 	Require(aClosed == 1, "Revocation notifies closure synchronously.");
-	Require(Wait([&] {
-		observed += server.readAllStandardOutput();
-		return observed.contains("closed");
-	}), "Revocation aborts the remote connection.");
+	Require(
+		Wait([&] {
+			observed += server.readAllStandardOutput();
+			return observed.contains("closed");
+		}),
+		"Revocation aborts the remote connection.");
 	Require(aMessages == 1, "Revocation suppresses queued old-generation frames.");
 	a.reset();
 	bMessage.clear();
 	b.sendBinary("survivor");
-	Require(Wait([&] { return bMessage == "survivor"; }) && bClosed == 0,
+	Require(
+		Wait([&] { return bMessage == "survivor"; }) && bClosed == 0,
 		"Destroying account A leaves account B's worker and socket usable.");
 	b.sendText("stale");
 	observed = otherServer.readAllStandardOutput();
@@ -178,16 +187,20 @@ int main(int argc, char *argv[]) try {
 		observed += otherServer.readAllStandardOutput();
 	}
 	b.close();
-	Require(Wait([&] {
-		observed += otherServer.readAllStandardOutput();
-		return observed.contains("closed");
-	}), "Explicit close aborts the remote socket.");
-	Require(bTextMessages == 0 && bClosed == 0,
+	Require(
+		Wait([&] {
+			observed += otherServer.readAllStandardOutput();
+			return observed.contains("closed");
+		}),
+		"Explicit close aborts the remote socket.");
+	Require(
+		bTextMessages == 0 && bClosed == 0,
 		"Explicit close suppresses queued frames without failure notification.");
 	auto selfDeleting = std::make_unique<Core::WebSocketClient>(routeB);
 	selfDeleting->onConnected = [&] { selfDeleting.reset(); };
 	selfDeleting->connectTo(u"target.invalid"_q, 443, u"/"_q, {});
-	Require(Wait([&] { return !selfDeleting; }),
+	Require(
+		Wait([&] { return !selfDeleting; }),
 		"A callback may destroy its client after the shared worker restarts.");
 	otherServer.kill();
 	Require(otherServer.waitForFinished(), "Stop second native fixture.");

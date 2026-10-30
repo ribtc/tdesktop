@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/bytes.h"
 #include "mtproto/sender.h"
+#include "mtproto/network_context.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "webrtc/webrtc_device_common.h"
 #include "webrtc/webrtc_device_resolver.h"
@@ -576,6 +577,7 @@ private:
 		-> std::vector<tgcalls::VideoCodecName>;
 	bool tryCreateController();
 	void destroyController();
+	void revokeNetwork();
 	bool tryCreateScreencast();
 	void destroyScreencast();
 
@@ -611,9 +613,9 @@ private:
 
 	void audioLevelsUpdated(const tgcalls::GroupLevelsUpdate &data);
 	void setInstanceConnected(tgcalls::GroupNetworkState networkState);
-	void setInstanceMode(InstanceMode mode);
+	bool setInstanceMode(InstanceMode mode);
 	void setScreenInstanceConnected(tgcalls::GroupNetworkState networkState);
-	void setScreenInstanceMode(InstanceMode mode);
+	bool setScreenInstanceMode(InstanceMode mode);
 	void checkLastSpoke();
 	void pushToTalkCancel();
 
@@ -686,6 +688,7 @@ private:
 	rpl::event_stream<PeerData*> _peerStream;
 	not_null<History*> _history; // Can change in legacy group migration.
 	MTP::Sender _api;
+	const MTP::NetworkSnapshot _network;
 	rpl::event_stream<not_null<Data::GroupCall*>> _realChanges;
 	rpl::variable<State> _state = State::Creating;
 	base::flat_set<uint32> _unresolvedSsrcs;

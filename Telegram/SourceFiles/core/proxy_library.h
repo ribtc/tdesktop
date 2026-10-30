@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "mtproto/network_context.h"
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 
 namespace Core {
@@ -53,6 +54,7 @@ private:
 	QString append(MTP::ProxyData proxy, QString notes, bool tryIPv6);
 	std::vector<ProxyEntry> _entries;
 	QJsonObject _preserved;
+	QJsonArray _quarantined;
 	QByteArray _unreadable;
 	bool _writable = true;
 	bool _migrated = false;

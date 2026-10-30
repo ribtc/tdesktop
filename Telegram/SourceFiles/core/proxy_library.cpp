@@ -10,12 +10,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUuid>
+#include <QtCore/QHash>
+
+#include <limits>
 #include <QtNetwork/QHostAddress>
 
 namespace Core {
 
 bool ProxyLibrary::load(const QByteArray &bytes) {
 	_entries.clear();
+	_quarantined = {};
+	_preserved = {};
+	_migrated = false;
 	_unreadable = bytes;
 	_writable = false;
 	if (bytes.size() > 8 * 1024 * 1024) {
@@ -30,12 +36,26 @@ bool ProxyLibrary::load(const QByteArray &bytes) {
 		|| records.size() > 10000) {
 		return false;
 	}
+	auto identities = QHash<QUuid, int>();
+	for (const auto &record : records) {
+		++identities[QUuid(record.toObject().value("id").toString())];
+	}
 	for (const auto &record : records) {
 		const auto data = record.toObject();
 		auto entry = ProxyEntry();
 		entry.id = data.value("id").toString();
+		auto revisionOk = false;
+		entry.revision = data.value("revision").toString()
+			.toULongLong(&revisionOk);
+		const auto type = data.value("type").toInt(-1);
+		const auto port = data.value("port").toInt(-1);
 		if (QUuid(entry.id).isNull()
-			|| find(entry.id)
+			|| identities.value(QUuid(entry.id)) != 1
+			|| type < int(MTP::ProxyData::Type::Socks5)
+			|| type > int(MTP::ProxyData::Type::Web)
+			|| port <= 0 || port > 65535
+			|| !revisionOk || !entry.revision
+			|| entry.revision == std::numeric_limits<uint64>::max()
 			|| !data.value("type").isDouble()
 			|| !data.value("host").isString()
 			|| !data.value("port").isDouble()
@@ -46,8 +66,8 @@ bool ProxyLibrary::load(const QByteArray &bytes) {
 			|| !data.value("revision").isString()
 			|| data.value("type").toInt() != data.value("type").toDouble()
 			|| data.value("port").toInt() != data.value("port").toDouble()) {
-			_entries.clear();
-			return false;
+			_quarantined.push_back(record);
+			continue;
 		}
 		entry.proxy.type = MTP::ProxyData::Type(data.value("type").toInt());
 		entry.proxy.host = data.value("host").toString();
@@ -56,7 +76,6 @@ bool ProxyLibrary::load(const QByteArray &bytes) {
 		entry.proxy.password = data.value("password").toString();
 		entry.notes = data.value("notes").toString();
 		entry.tryIPv6 = data.value("ipv6").toBool();
-		entry.revision = data.value("revision").toString().toULongLong();
 		entry.preserved = data;
 		_entries.push_back(std::move(entry));
 	}
@@ -71,7 +90,7 @@ QByteArray ProxyLibrary::serialize() const {
 	if (!_writable) {
 		return _unreadable;
 	}
-	auto records = QJsonArray();
+	auto records = _quarantined;
 	for (const auto &entry : _entries) {
 		auto data = entry.preserved;
 		data.insert("id", entry.id);
@@ -148,7 +167,8 @@ bool ProxyLibrary::update(const ProxyEntry &entry) {
 	}
 	const auto connection = old->proxy != entry.proxy
 		|| old->tryIPv6 != entry.tryIPv6;
-	if (connection && !Supported(entry.proxy)) {
+	if (connection && (!Supported(entry.proxy)
+		|| old->revision == std::numeric_limits<uint64>::max() - 1)) {
 		return false;
 	}
 	const auto revision = old->revision + (connection ? 1 : 0);

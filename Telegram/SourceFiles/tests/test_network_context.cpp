@@ -177,15 +177,40 @@ int main(int argc, char **argv) {
 		"Changing a route preserves its identity and advances its revision.");
 	Require(!restored.update(stale),
 		"An old editor cannot overwrite a newer route.");
-	auto malformedRoot = QJsonDocument::fromJson(library.serialize()).object();
+	auto isolated = Core::ProxyLibrary();
+	const auto goodId = isolated.add(savedProxy);
+	const auto badId = isolated.add(savedProxy);
+	auto malformedRoot = QJsonDocument::fromJson(isolated.serialize()).object();
 	auto malformedEntries = malformedRoot.value("entries").toArray();
-	auto malformedEntry = malformedEntries.first().toObject();
+	auto malformedEntry = malformedEntries[1].toObject();
 	malformedEntry.insert("port", "1080");
-	malformedEntries[0] = malformedEntry;
+	malformedEntries[1] = malformedEntry;
 	malformedRoot.insert("entries", malformedEntries);
-	const auto malformedBytes = QJsonDocument(malformedRoot).toJson();
-	Require(!corrupt.load(malformedBytes) && corrupt.serialize() == malformedBytes,
-		"Malformed records are preserved without silently rewriting fields.");
+	Require(corrupt.load(QJsonDocument(malformedRoot).toJson())
+		&& corrupt.find(goodId) && !corrupt.find(badId),
+		"One malformed record cannot block an unrelated valid proxy.");
+	Require(corrupt.remove(goodId), "Valid records remain editable.");
+	Require(restored.load(corrupt.serialize())
+		&& !restored.find(badId)
+		&& QJsonDocument::fromJson(restored.serialize()).object()
+			.value("entries").toArray().contains(malformedEntry),
+		"Quarantined records survive valid edits and another restart intact.");
+	malformedEntries[1] = malformedEntries[0];
+	malformedRoot.insert("entries", malformedEntries);
+	Require(corrupt.load(QJsonDocument(malformedRoot).toJson())
+		&& !corrupt.find(goodId) && corrupt.entries().empty(),
+		"Duplicate identities quarantine every candidate, never pick a route.");
+	for (const auto &field : { "type", "port", "revision" }) {
+		auto invalidEntry = malformedEntry;
+		invalidEntry.insert("port", 1080);
+		invalidEntry.insert(field, field == QString("revision")
+			? QJsonValue("0") : QJsonValue(999999));
+		malformedEntries[1] = invalidEntry;
+		malformedRoot.insert("entries", malformedEntries);
+		Require(corrupt.load(QJsonDocument(malformedRoot).toJson())
+			&& corrupt.find(goodId) && !corrupt.find(badId),
+			"Invalid enums, ports and revisions cannot escape quarantine.");
+	}
 	auto account = MTP::NetworkContext();
 	Require(!account.snapshot().allowed(),
 		"An unbound account must not connect.");

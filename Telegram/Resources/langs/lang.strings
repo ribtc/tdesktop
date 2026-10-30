@@ -9463,3 +9463,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_proxy_management_column_country" = "Country";
 "lng_proxy_management_column_accounts" = "Accounts";
 "lng_proxy_management_column_actions" = "Actions";
+
+"lng_account_web_blocked" = "This web content is unavailable because the embedded browser cannot use an isolated account proxy.";
+"lng_account_system_blocked" = "This system service is unavailable because its network requests cannot use an isolated account proxy.";
+"lng_account_crash_blocked" = "Crash upload is unavailable because the report may contain account data. You can save it locally.";
+"lng_account_translation_blocked" = "URL translation requires an active SOCKS5 account proxy.";
+"lng_account_payment_blocked" = "Card tokenization requires an active SOCKS5 account proxy.";
+"lng_account_route_changed" = "The account proxy changed. Try again.";
+"lng_account_templates_blocked" = "Remote templates require an active SOCKS5 account proxy. Local templates remain available.";
+"lng_account_wallet_blocked" = "Wallet live updates require an active SOCKS5 account proxy. Periodic synchronization remains available.";
+"lng_proxy_management_file_filter" = "Text (*.txt);;All files (*)";

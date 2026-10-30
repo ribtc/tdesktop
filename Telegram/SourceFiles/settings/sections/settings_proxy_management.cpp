@@ -352,7 +352,8 @@ void ProxyImport::clipboard() {
 }
 
 void ProxyImport::chooseFile() {
-	FileDialog::GetOpenPath(this, tr::lng_proxy_management_file(tr::now), u"Text (*.txt);;All files (*)"_q,
+	FileDialog::GetOpenPath(this, tr::lng_proxy_management_file(tr::now),
+		tr::lng_proxy_management_file_filter(tr::now),
 		crl::guard(this, [=](const FileDialog::OpenResult &result) {
 			if (!result.paths.empty()) {
 				readFile(result.paths.front());

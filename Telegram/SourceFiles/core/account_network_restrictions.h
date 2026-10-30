@@ -7,18 +7,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/basic_types.h"
+#include "lang/lang_keys.h"
 
 namespace Core {
 
 [[nodiscard]] inline QString AccountWebViewError() {
-	return u"This web content is unavailable because the embedded browser "
-		"cannot use an isolated account proxy."_q;
+	return Lang::EarlyValue(tr::lng_account_web_blocked.base);
 }
 
 [[nodiscard]] inline QString AccountSystemNetworkError() {
-	return u"This system service is unavailable because its network requests "
-		"cannot use an isolated account proxy."_q;
+	return Lang::EarlyValue(tr::lng_account_system_blocked.base);
 }
 
 } // namespace Core

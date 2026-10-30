@@ -7,13 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "support/support_templates.h"
 
-#include "main/main_account.h"
-#include "mtproto/http_transport.h"
-
-#include "ui/toast/toast.h"
-#include "data/data_session.h"
 #include "core/shortcuts.h"
+#include "data/data_session.h"
+#include "lang/lang_keys.h"
+#include "main/main_account.h"
 #include "main/main_session.h"
+#include "mtproto/http_transport.h"
+#include "ui/toast/toast.h"
 
 #include <QtNetwork/QNetworkAccessManager>
 
@@ -536,8 +536,7 @@ void Templates::update() {
 	}
 	if (!_session->account().network().snapshot().httpProxy()) {
 		_session->data().serviceNotification({
-			u"Remote templates require an active SOCKS5 account proxy. "
-			"Local templates remain available."_q,
+			tr::lng_account_templates_blocked(tr::now),
 		});
 		return;
 	}

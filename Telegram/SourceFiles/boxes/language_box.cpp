@@ -1513,11 +1513,11 @@ void LanguageBox::prepare() {
 	inner->activations(
 	) | rpl::on_next([=](const Language &language) {
 		// "#custom" is applied each time it's passed to switchToLanguage().
-		// So we check that the language really has changed.
+		// Other selections also record an explicit choice of the active language.
 		const auto currentId = [] {
 			return Lang::LanguageIdOrDefault(Lang::Id());
 		};
-		if (language.id != currentId()) {
+		if (language.id != currentId() || language.id != u"#custom"_q) {
 			Lang::CurrentCloudManager().switchToLanguage(language);
 			if (inner) {
 				inner->changeChosen(currentId());

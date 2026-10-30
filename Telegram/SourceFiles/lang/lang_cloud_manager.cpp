@@ -157,7 +157,8 @@ Language ParseLanguage(const MTPLangPackLanguage &data) {
 }
 
 CloudManager::CloudManager(Instance &langpack)
-: _langpack(langpack) {
+: _langpack(langpack)
+, _languages(BundledLanguages()) {
 	const auto mtpLifetime = _lifetime.make_state<rpl::lifetime>();
 	Core::App().domain().activeValue(
 	) | rpl::filter([=](Main::Account *account) {
@@ -167,6 +168,9 @@ CloudManager::CloudManager(Instance &langpack)
 		) | rpl::on_next([=](not_null<MTP::Instance*> instance) {
 			_api.emplace(instance);
 			resendRequests();
+			if (!_langPackRequestId) {
+				requestLangPackDifference(Pack::Current);
+			}
 		});
 	}, [=] {
 		_api.reset();
@@ -313,9 +317,15 @@ void CloudManager::requestLanguageList() {
 	_languagesRequestId = _api->request(MTPlangpack_GetLanguages(
 		MTP_string(CloudLangPackName())
 	)).done([=](const MTPVector<MTPLangPackLanguage> &result) {
-		auto languages = Languages();
+		auto languages = BundledLanguages();
 		for (const auto &language : result.v) {
-			languages.push_back(ParseLanguage(language));
+			const auto parsed = ParseLanguage(language);
+			const auto i = ranges::find(languages, parsed.id, &Language::id);
+			if (i == end(languages)) {
+				languages.push_back(parsed);
+			} else {
+				*i = parsed;
+			}
 		}
 		if (_languages != languages) {
 			_languages = languages;
@@ -418,8 +428,11 @@ void CloudManager::requestLanguageAndSwitch(
 		const QString &id,
 		bool warning) {
 	Expects(!id.isEmpty());
+	cancelLanguageSwitch();
 
 	if (LanguageIdOrDefault(_langpack.id()) == id) {
+		_langpack.markLanguageExplicit();
+		Local::writeLangPack();
 		Ui::show(Ui::MakeInformBox(tr::lng_language_already()));
 		return;
 	} else if (id == u"#custom"_q) {
@@ -427,6 +440,9 @@ void CloudManager::requestLanguageAndSwitch(
 		return;
 	}
 
+	if (switchToBundledLanguage(id)) {
+		return;
+	}
 	_switchingToLanguageId = id;
 	_switchingToLanguageWarning = warning;
 	sendSwitchingToLanguageRequest();
@@ -471,9 +487,16 @@ void CloudManager::sendSwitchingToLanguageRequest() {
 }
 
 void CloudManager::switchToLanguage(const Language &data) {
+	cancelLanguageSwitch();
 	if (_langpack.id() == data.id && data.id != u"#custom"_q) {
+		_langpack.markLanguageExplicit();
+		Local::writeLangPack();
 		return;
-	} else if (!_api) {
+	}
+	if (switchToBundledLanguage(data.id)) {
+		return;
+	}
+	if (!_api) {
 		return;
 	}
 
@@ -513,6 +536,21 @@ void CloudManager::switchToLanguage(const Language &data) {
 			_getKeysForSwitchRequestId = 0;
 		}).send();
 	}
+}
+
+bool CloudManager::switchToBundledLanguage(const QString &id) {
+	for (const auto &language : BundledLanguages()) {
+		if (language.id != id) {
+			continue;
+		}
+		const auto restart = !canApplyWithoutRestart(id);
+		performSwitchAndAddToRecent(language);
+		if (restart) {
+			Core::Restart();
+		}
+		return true;
+	}
+	return false;
 }
 
 void CloudManager::performSwitchToCustom() {
@@ -574,9 +612,22 @@ void CloudManager::switchToTestLanguage() {
 	performSwitch({ testLanguageId });
 }
 
+void CloudManager::cancelLanguageSwitch() {
+	const auto switching = base::take(_switchingToLanguageRequest);
+	const auto confirming = base::take(_getKeysForSwitchRequestId);
+	if (_api) {
+		_api->request(switching).cancel();
+		_api->request(confirming).cancel();
+	}
+	_switchingToLanguageId.clear();
+	_switchingToLanguageWarning = false;
+}
+
 void CloudManager::performSwitch(const Language &data) {
+	cancelLanguageSwitch();
 	_restartAfterSwitch = false;
 	switchLangPackId(data);
+	Local::writeLangPack();
 	requestLangPackDifference(Pack::Current);
 	requestLangPackDifference(Pack::Base);
 }

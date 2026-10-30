@@ -38,6 +38,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Lang {
 
+[[nodiscard]] QString EarlyValue(ushort key);
+
 [[nodiscard]] QString Id();
 [[nodiscard]] rpl::producer<> Updated();
 [[nodiscard]] QString GetNonDefaultValue(const QByteArray &key);

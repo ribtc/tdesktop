@@ -34,6 +34,8 @@ inline bool operator!=(const Language &a, const Language &b) {
 QString CloudLangPackName();
 QString CustomLanguageId();
 Language DefaultLanguage();
+Language SystemLanguage(const QString &code);
+std::vector<Language> BundledLanguages();
 
 class Instance;
 Instance &GetInstance();
@@ -52,6 +54,8 @@ public:
 	Instance(not_null<Instance*> derived, const PrivateTag &);
 
 	void switchToId(const Language &language);
+	void applySystemLanguage();
+	void markLanguageExplicit();
 	void switchToCustomFile(const QString &filePath);
 
 	Instance(const Instance &other) = delete;
@@ -111,6 +115,7 @@ private:
 	void applyDifferenceToMe(const MTPDlangPackDifference &difference);
 	void applyValue(const QByteArray &key, const QByteArray &value);
 	void resetValue(const QByteArray &key);
+	void applyBundledValues();
 	void reset(const Language &language);
 	void fillFromCustomContent(
 		const QString &absolutePath,
@@ -127,6 +132,7 @@ private:
 
 	Instance *_derived = nullptr;
 
+	bool _followSystemLanguage = true;
 	QString _id, _pluralId;
 	rpl::event_stream<QString> _idChanges;
 	QString _name, _nativeName;

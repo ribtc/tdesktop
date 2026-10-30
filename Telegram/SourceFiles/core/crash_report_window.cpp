@@ -572,8 +572,8 @@ void LastCrashedWindow::addReportFieldPart(const QLatin1String &name, const QLat
 
 void LastCrashedWindow::sendReport() {
 	if (!Core::AccountSystemNetworkError().isEmpty()) {
-		_pleaseSendReport.setText(u"Crash upload is unavailable because the "
-			"report may contain account data. You can save it locally."_q);
+		_pleaseSendReport.setText(
+			Lang::EarlyValue(tr::lng_account_crash_blocked.base));
 		_sendingState = SendingFail;
 		updateControls();
 		return;

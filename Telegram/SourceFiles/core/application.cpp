@@ -947,6 +947,7 @@ void Application::badMtprotoConfigurationError(const MTP::ProxyData &proxy) {
 void Application::startLocalStorage() {
 	Ui::GL::DetectLastCheckCrash();
 	Local::start();
+	_langpack->applySystemLanguage();
 	_saveSettingsTimer.emplace([=] { saveSettings(); });
 	settings().saveDelayedRequests() | rpl::on_next([=] {
 		saveSettingsDelayed();

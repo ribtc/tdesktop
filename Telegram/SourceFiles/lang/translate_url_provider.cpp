@@ -7,11 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/translate_url_provider.h"
 
+#include "lang/lang_keys.h"
 #include "mtproto/http_transport.h"
-#include "ui/toast/toast.h"
-
 #include "spellcheck/platform/platform_language.h"
 #include "ui/text/text_html_tags.h"
+#include "ui/toast/toast.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -201,7 +201,7 @@ public:
 		const auto route = _context.snapshot();
 		if (!route.httpProxy()) {
 			Toast::Show(
-				u"URL translation requires an active SOCKS5 account proxy."_q);
+				tr::lng_account_translation_blocked(tr::now));
 			done({ .error = TranslateProviderError::Unknown });
 			return;
 		}

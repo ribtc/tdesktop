@@ -7,16 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/lang_instance.h"
 
-#include "core/application.h"
-#include "storage/serialize_common.h"
-#include "storage/localstorage.h"
-#include "ui/boxes/confirm_box.h"
-#include "lang/lang_file_parser.h"
-#include "lang/lang_tag.h" // kTextCommandLangTag.
 #include "base/platform/base_platform_info.h"
 #include "base/qthelp_regex.h"
-
+#include "core/application.h"
+#include "lang/lang_file_parser.h"
+#include "lang/lang_tag.h" // kTextCommandLangTag.
+#include "storage/localstorage.h"
+#include "storage/serialize_common.h"
+#include "ui/boxes/confirm_box.h"
 #include "lang_auto_counts.h" // kKeysCount, kTagsCount.
+
+#include <QtCore/QFile>
 
 namespace Lang {
 namespace {
@@ -26,6 +27,15 @@ constexpr auto kSerializeVersion = 1;
 constexpr auto kCloudLangPackName = "tdesktop"_cs;
 constexpr auto kCustomLanguage = "#custom"_cs;
 constexpr auto kLangValuesLimit = 20000;
+
+QString SystemUiLanguageCode() {
+	const auto languages = QLocale::system().uiLanguages();
+	if (!languages.isEmpty()) {
+		return languages.front();
+	}
+	const auto system = Platform::SystemLanguage();
+	return !system.isEmpty() ? system : DefaultLanguageId();
+}
 
 std::vector<QString> PrepareDefaultValues() {
 	auto result = std::vector<QString>();
@@ -234,6 +244,74 @@ Language DefaultLanguage() {
 	};
 }
 
+std::vector<Language> BundledLanguages() {
+	return {
+		DefaultLanguage(),
+		{ u"zh-hans"_q, u"zh"_q, {},
+			u"Chinese (Simplified)"_q, u"简体中文"_q },
+		{ u"zh-hant"_q, u"zh"_q, {},
+			u"Chinese (Traditional)"_q, u"繁體中文"_q },
+	};
+}
+
+Language SystemLanguage(const QString &code) {
+	const auto locale = QLocale(code);
+	const auto language = locale.language();
+	if (language == QLocale::C) {
+		return DefaultLanguage();
+	}
+	const auto id = (language == QLocale::Chinese)
+		? ((locale.script() == QLocale::TraditionalHanScript)
+			? u"zh-hant"_q : u"zh-hans"_q)
+		: (language == QLocale::Portuguese)
+		? ((locale.territory() == QLocale::Brazil)
+			? u"pt-br"_q : u"pt-pt"_q)
+		: QLocale::languageToCode(language);
+	for (const auto &bundled : BundledLanguages()) {
+		if (bundled.id == id) {
+			return bundled;
+		}
+	}
+	return {
+		id,
+		QLocale::languageToCode(language),
+		{},
+		QLocale::languageToString(language),
+		locale.nativeLanguageName(),
+	};
+}
+
+namespace {
+
+using BundledPack = std::map<QByteArray, QByteArray>;
+
+std::map<QString, BundledPack> LoadBundledValues() {
+	auto result = std::map<QString, BundledPack>();
+	for (const auto &language : BundledLanguages()) {
+		auto file = QFile(u":/gui/langs/"_q + language.id + u".strings"_q);
+		if (!file.open(QIODevice::ReadOnly)) {
+			continue;
+		}
+		auto &values = result[language.id];
+		const auto parser = FileParser(file.readAll(), [&](
+				QLatin1String key,
+				const QByteArray &value) {
+			values.emplace(QByteArray(key.data(), key.size()), value);
+		});
+		Assert(parser.errors().isEmpty());
+	}
+	return result;
+}
+
+const BundledPack &BundledValues(const QString &id) {
+	static const auto packs = LoadBundledValues();
+	static const auto empty = BundledPack();
+	const auto i = packs.find(id);
+	return (i != packs.end()) ? i->second : empty;
+}
+
+} // namespace
+
 struct Instance::PrivateTag {
 };
 
@@ -248,16 +326,39 @@ Instance::Instance(not_null<Instance*> derived, const PrivateTag &)
 }
 
 void Instance::switchToId(const Language &data) {
+	markLanguageExplicit();
 	reset(data);
 	if (_id == u"#TEST_X"_q || _id == u"#TEST_0"_q) {
 		for (auto &value : _values) {
 			value = PrepareTestValue(value, _id[5]);
 		}
-		if (!_derived) {
-			_updated.fire({});
-		}
 	}
 	updatePluralRules();
+	if (!_derived) {
+		_updated.fire({});
+	}
+}
+
+void Instance::markLanguageExplicit() {
+	_followSystemLanguage = false;
+}
+
+void Instance::applySystemLanguage() {
+	if (!_followSystemLanguage) {
+		return;
+	}
+	const auto language = SystemLanguage(systemLangCode());
+	if (_id != language.id) {
+		reset(language);
+		updatePluralRules();
+	}
+}
+
+void Instance::applyBundledValues() {
+	for (const auto &[key, value] : BundledValues(_id)) {
+		applyValue(key, value);
+		_nonDefaultValues.erase(key);
+	}
 }
 
 void Instance::setBaseId(const QString &baseId, const QString &pluralId) {
@@ -273,6 +374,7 @@ void Instance::setBaseId(const QString &baseId, const QString &pluralId) {
 
 void Instance::switchToCustomFile(const QString &filePath) {
 	if (loadFromCustomFile(filePath)) {
+		_followSystemLanguage = false;
 		Local::writeLangPack();
 		_updated.fire({});
 	}
@@ -284,7 +386,6 @@ void Instance::reset(const Language &data) {
 		: !data.baseId.isEmpty()
 		? data.baseId
 		: data.id;
-	setBaseId(data.baseId, computedPluralId);
 	_id = LanguageIdOrDefault(data.id);
 	_pluralId = computedPluralId;
 	_name = data.name;
@@ -299,6 +400,8 @@ void Instance::reset(const Language &data) {
 		_values[i] = GetOriginalValue(ushort(i));
 	}
 	ranges::fill(_nonDefaultSet, 0);
+	setBaseId(data.baseId, computedPluralId);
+	applyBundledValues();
 	updateChoosingStickerReplacement();
 
 	_idChanges.fire_copy(_id);
@@ -306,16 +409,7 @@ void Instance::reset(const Language &data) {
 
 QString Instance::systemLangCode() const {
 	if (_systemLanguage.isEmpty()) {
-		_systemLanguage = Platform::SystemLanguage();
-		if (_systemLanguage.isEmpty()) {
-			auto uiLanguages = QLocale::system().uiLanguages();
-			if (!uiLanguages.isEmpty()) {
-				_systemLanguage = uiLanguages.front();
-			}
-			if (_systemLanguage.isEmpty()) {
-				_systemLanguage = DefaultLanguageId();
-			}
-		}
+		_systemLanguage = SystemUiLanguageCode();
 	}
 	return _systemLanguage;
 }
@@ -393,7 +487,7 @@ QByteArray Instance::serialize() const {
 			+ Serialize::bytearraySize(nonDefault.second);
 	}
 	const auto base = _base ? _base->serialize() : QByteArray();
-	size += Serialize::bytearraySize(base);
+	size += Serialize::bytearraySize(base) + sizeof(qint32);
 
 	auto result = QByteArray();
 	result.reserve(size);
@@ -415,7 +509,7 @@ QByteArray Instance::serialize() const {
 		for (const auto &nonDefault : _nonDefaultValues) {
 			stream << nonDefault.first << nonDefault.second;
 		}
-		stream << base;
+		stream << base << qint32(_followSystemLanguage);
 	}
 	return result;
 }
@@ -477,6 +571,7 @@ void Instance::fillFromSerialized(
 			customFilePathRelative);
 		if (!currentCustomFileContent.isEmpty()
 			&& currentCustomFileContent != customFileContent) {
+			markLanguageExplicit();
 			fillFromCustomContent(
 				customFilePathAbsolute,
 				customFilePathRelative,
@@ -501,7 +596,6 @@ void Instance::fillFromSerialized(
 		nonDefaultStrings.push_back(value);
 	}
 
-	_base = nullptr;
 	QByteArray base;
 	if (legacyFormat) {
 		if (!stream.atEnd()) {
@@ -523,6 +617,21 @@ void Instance::fillFromSerialized(
 	} else {
 		stream >> base;
 	}
+	auto followSystem = qint32(id.isEmpty());
+	if (!stream.atEnd()) {
+		stream >> followSystem;
+	}
+	if (stream.status() != QDataStream::Ok) {
+		LOG(("Lang Error: Could not read language preference."));
+		return;
+	}
+	_nonDefaultValues.clear();
+	ranges::fill(_nonDefaultSet, 0);
+	if (!_derived) {
+		_values = PrepareDefaultValues();
+	}
+	_base = nullptr;
+	_followSystemLanguage = (followSystem != 0);
 	if (!base.isEmpty()) {
 		_base = std::make_unique<Instance>(this, PrivateTag{});
 		_base->fillFromSerialized(base, dataAppVersion);
@@ -540,6 +649,7 @@ void Instance::fillFromSerialized(
 	_customFilePathAbsolute = customFilePathAbsolute;
 	_customFilePathRelative = customFilePathRelative;
 	_customFileContent = customFileContent;
+	applyBundledValues();
 	LOG(("Lang Info: Loaded cached, keys: %1").arg(nonDefaultValuesCount));
 	for (auto i = 0, count = nonDefaultValuesCount * 2; i != count; i += 2) {
 		applyValue(nonDefaultStrings[i], nonDefaultStrings[i + 1]);
@@ -723,6 +833,8 @@ QString Instance::getNonDefaultValue(const QByteArray &key) const {
 	const auto i = _nonDefaultValues.find(key);
 	return (i != end(_nonDefaultValues))
 		? QString::fromUtf8(i->second)
+		: BundledValues(_id).contains(key)
+		? QString::fromUtf8(BundledValues(_id).at(key))
 		: _base
 		? _base->getNonDefaultValue(key)
 		: QString();
@@ -760,6 +872,13 @@ void Instance::updatePluralRules() {
 }
 
 void Instance::resetValue(const QByteArray &key) {
+	const auto &bundled = BundledValues(_id);
+	const auto i = bundled.find(key);
+	if (i != bundled.end()) {
+		applyValue(key, i->second);
+		_nonDefaultValues.erase(key);
+		return;
+	}
 	_nonDefaultValues.erase(key);
 
 	const auto keyIndex = GetKeyIndex(QLatin1String(key));
@@ -784,6 +903,23 @@ void Instance::resetValue(const QByteArray &key) {
 			}
 		}
 	}
+}
+
+QString EarlyValue(ushort key) {
+	if (Core::IsAppLaunched()) {
+		return GetInstance().getValue(key);
+	}
+	const auto language = SystemLanguage(SystemUiLanguageCode());
+	auto result = GetOriginalValue(key);
+	for (const auto &[name, value] : BundledValues(language.id)) {
+		if (GetKeyIndex(QLatin1String(name)) == key) {
+			ParseKeyValue(name, value, [&](ushort, QString &&parsed) {
+				result = std::move(parsed);
+			});
+			break;
+		}
+	}
+	return result;
 }
 
 Instance &GetInstance() {

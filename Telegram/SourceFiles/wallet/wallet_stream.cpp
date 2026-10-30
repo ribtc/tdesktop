@@ -8,8 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "wallet/wallet_stream.h"
 
 #include "base/unixtime.h"
-#include "ui/toast/toast.h"
 #include "core/websocket_client.h"
+#include "lang/lang_keys.h"
+#include "ui/toast/toast.h"
 #include "wallet/wallet_address.h"
 #include "wallet/wallet_api.h"
 
@@ -71,8 +72,7 @@ void Stream::start(const QString &address) {
 	_started = true;
 	_retryAttempt = 0;
 	if (!_api->network().snapshot().httpProxy()) {
-		Ui::Toast::Show(u"Wallet live updates require an active SOCKS5 account "
-			"proxy. Periodic synchronization remains available."_q);
+		Ui::Toast::Show(tr::lng_account_wallet_blocked(tr::now));
 		return;
 	}
 	acquire();

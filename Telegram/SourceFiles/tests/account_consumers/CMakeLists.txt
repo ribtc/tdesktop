@@ -26,3 +26,25 @@ target_precompile_headers(test_account_consumers PRIVATE ../../mtproto/network_c
 target_link_libraries(test_account_consumers PRIVATE Qt6::Core Qt6::Network OpenSSL::Crypto)
 enable_testing()
 add_test(NAME account_consumers COMMAND test_account_consumers)
+if (UNIX)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(test_websocket_capacity
+        ../test_websocket_capacity.cpp
+        ../network_context/assertion_log.cpp
+        ../../core/websocket_client.cpp
+        ../../mtproto/network_context.cpp
+        ../../mtproto/mtproto_proxy_data.cpp
+        ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_base/base/random.cpp
+    )
+    get_target_property(test_includes test_account_consumers INCLUDE_DIRECTORIES)
+    target_include_directories(test_websocket_capacity PRIVATE ${test_includes})
+    target_precompile_headers(test_websocket_capacity REUSE_FROM test_account_consumers)
+    target_link_libraries(test_websocket_capacity PRIVATE Qt6::Core Qt6::Network OpenSSL::Crypto)
+    if (APPLE)
+        find_package(Qt6 REQUIRED COMPONENTS Gui)
+        target_link_libraries(test_websocket_capacity PRIVATE Qt6::Gui)
+    endif()
+    add_test(NAME websocket_capacity COMMAND test_websocket_capacity
+        ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/websocket_server.py)
+    set_tests_properties(websocket_capacity PROPERTIES TIMEOUT 30)
+endif()

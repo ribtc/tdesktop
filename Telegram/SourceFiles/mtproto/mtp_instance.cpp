@@ -104,6 +104,10 @@ public:
 	-> rpl::producer<mtpRequestId>;
 	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
+	void quiesceNetwork(Fn<void()> done);
+	void registerSessionWorker(not_null<QObject*> worker);
+	void sessionWorkerDestroyed();
+
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
 	[[nodiscard]] int32 dcstate(ShiftedDcId shiftedDcId = 0);
@@ -299,6 +303,8 @@ private:
 	rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
+	int _sessionWorkers = 0;
+	std::vector<Fn<void()>> _quiesceCallbacks;
 
 	rpl::lifetime _lifetime;
 
@@ -621,6 +627,53 @@ void Instance::Private::requestCDNConfig() {
 		});
 		Local::writeSettings();
 	}).send();
+}
+
+void Instance::Private::registerSessionWorker(not_null<QObject*> worker) {
+	++_sessionWorkers;
+	const auto observer = new QObject();
+	observer->moveToThread(worker->thread());
+	QObject::connect(
+		worker->thread(),
+		&QThread::finished,
+		observer,
+		&QObject::deleteLater);
+	// WHY: QObject emits destroyed before deleting its children. Queue the
+	// acknowledgement on the worker thread so every socket destructor has
+	// finished before the main thread can open the next route.
+	QObject::connect(worker, &QObject::destroyed, observer, [=] {
+		InvokeQueued(_instance, [=] { sessionWorkerDestroyed(); });
+		observer->deleteLater();
+	}, Qt::QueuedConnection);
+}
+
+void Instance::Private::quiesceNetwork(Fn<void()> done) {
+	Expects(!_instance->network().snapshot().allowed());
+	Expects(done != nullptr);
+
+	_quiesceCallbacks.push_back(std::move(done));
+	for (const auto &[shiftedDcId, session] : _sessions) {
+		session->stop();
+	}
+	if (!_sessionWorkers) {
+		const auto callbacks = base::take(_quiesceCallbacks);
+		InvokeQueued(_instance, [callbacks] {
+			for (const auto &callback : callbacks) {
+				callback();
+			}
+		});
+	}
+}
+
+void Instance::Private::sessionWorkerDestroyed() {
+	Expects(_sessionWorkers > 0);
+	if (--_sessionWorkers || _quiesceCallbacks.empty()) {
+		return;
+	}
+	const auto callbacks = base::take(_quiesceCallbacks);
+	for (const auto &callback : callbacks) {
+		callback();
+	}
 }
 
 void Instance::Private::restart() {
@@ -2050,6 +2103,14 @@ void Instance::requestConfigIfOld() {
 
 void Instance::requestCDNConfig() {
 	_private->requestCDNConfig();
+}
+
+void Instance::quiesceNetwork(Fn<void()> done) {
+	_private->quiesceNetwork(std::move(done));
+}
+
+void Instance::registerSessionWorker(not_null<QObject*> worker) {
+	_private->registerSessionWorker(worker);
 }
 
 void Instance::restart() {

@@ -208,11 +208,15 @@ void Session::watchDcOptionsChanges() {
 
 void Session::start() {
 	killConnection();
+	if (!_instance->network().snapshot().allowed()) {
+		return;
+	}
 	_private = new SessionPrivate(
 		_instance,
 		_thread.get(),
 		_data,
 		_shiftedDcId);
+	_instance->registerSessionWorker(_private);
 }
 
 void Session::restart() {
@@ -225,6 +229,8 @@ void Session::restart() {
 		InvokeQueued(captured, [=] {
 			captured->restartNow();
 		});
+	} else {
+		start();
 	}
 }
 
@@ -314,6 +320,8 @@ void Session::sendAnything(crl::time msCanWait) {
 void Session::needToResumeAndSend() {
 	if (_killed) {
 		DEBUG_LOG(("Session Info: can't resume a killed session"));
+		return;
+	} else if (!_instance->network().snapshot().allowed()) {
 		return;
 	}
 	if (!_private) {

@@ -10,8 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/object_ptr.h"
 #include "core/core_settings_proxy.h"
-#include "mtproto/connection_abstract.h"
 #include "mtproto/mtproto_proxy_data.h"
+#include "mtproto/proxy_check.h"
 
 namespace Ui {
 class Show;
@@ -107,7 +107,7 @@ public:
 	~ProxiesBoxController();
 
 private:
-	using Checker = MTP::details::ConnectionPointer;
+	using Checker = MTP::ProxyCheckConnection;
 	struct Item {
 		int id = 0;
 		ProxyData data;

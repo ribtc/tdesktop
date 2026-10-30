@@ -22,6 +22,7 @@ class Session;
 
 class DcOptions;
 class Config;
+class NetworkContext;
 struct ConfigFields;
 struct ProxyData;
 class AuthKey;
@@ -45,6 +46,7 @@ public:
 		static constexpr auto kTemporaryMainDc = 1000;
 
 		std::unique_ptr<Config> config;
+		std::shared_ptr<NetworkContext> network;
 		DcId mainDcId = kNotSetMainDc;
 		AuthKeysList keys;
 		QString deviceModel;
@@ -60,6 +62,8 @@ public:
 	Instance(const Instance &other) = delete;
 	Instance &operator=(const Instance &other) = delete;
 	~Instance();
+
+	[[nodiscard]] NetworkContext &network() const;
 
 	void resolveProxyDomain(const QString &host);
 	void setGoodProxyDomain(const QString &host, const QString &ip);
@@ -241,6 +245,7 @@ private:
 		mtpRequestId afterRequestId);
 
 	class Private;
+	const std::shared_ptr<NetworkContext> _network;
 	const std::unique_ptr<Private> _private;
 
 };

@@ -1021,6 +1021,9 @@ void SessionPrivate::connectToServer(bool afterConfig) {
 	}
 
 	_options = std::make_unique<SessionOptions>(_sessionData->options());
+	if (!_options->network.allowed()) {
+		return;
+	}
 
 	const auto bareDc = BareDcId(_shiftedDcId);
 
@@ -1274,6 +1277,10 @@ void SessionPrivate::requestCDNConfig() {
 }
 
 void SessionPrivate::handleReceived() {
+	if (!_options || !_options->network.allowed()) {
+		return;
+	}
+
 	Expects(_encryptionKey != nullptr);
 
 	onReceivedSome();
@@ -2448,6 +2455,10 @@ void SessionPrivate::removeTestConnection(
 }
 
 void SessionPrivate::checkAuthKey() {
+	if (!_options || !_options->network.allowed()) {
+		return;
+	}
+
 	if (_keyId) {
 		authKeyChecked();
 	} else if (_instance->isKeysDestroyer()) {
@@ -2646,6 +2657,10 @@ DcType SessionPrivate::tryAcquireKeyCreation() {
 }
 
 void SessionPrivate::authKeyChecked() {
+	if (!_options || !_options->network.allowed()) {
+		return;
+	}
+
 	connect(_connection, &AbstractConnection::receivedData, [=] {
 		handleReceived();
 	});
@@ -2712,6 +2727,9 @@ void SessionPrivate::destroyTemporaryKey() {
 bool SessionPrivate::sendSecureRequest(
 		SerializedRequest &&request,
 		bool needAnyResponse) {
+	if (!_options || !_options->network.allowed()) {
+		return false;
+	}
 	request.addPadding(false);
 
 	uint32 fullSize = request->size();

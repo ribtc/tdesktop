@@ -104,3 +104,22 @@ if (APPLE)
             "$<TARGET_FILE_DIR:test_bot_menu_hold>/Contents/Resources/"
     )
 endif()
+
+add_executable(test_network_context)
+init_target(test_network_context "(tests)")
+target_include_directories(test_network_context PRIVATE ${src_loc})
+nice_target_sources(test_network_context ${src_loc}
+PRIVATE
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_network_context.cpp
+)
+target_precompile_headers(test_network_context PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_network_context PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)

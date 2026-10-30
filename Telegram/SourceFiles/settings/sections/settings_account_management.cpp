@@ -243,7 +243,7 @@ void AccountRow::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	auto p = Painter(this);
-	p.fillRect(e->rect(), _selected ? st::sideBarBgActive : st::windowBg);
+	p.fillRect(e->rect(), _selected ? st::windowBgOver : st::windowBg);
 	const auto pad = st::managementPadding;
 	const auto size = st::managementAvatarSize;
 	const auto left = pad * 2;

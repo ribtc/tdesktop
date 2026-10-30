@@ -117,6 +117,9 @@ void ProxyCheckQueue::Pump(const std::shared_ptr<State> &state) {
 				(ping >= 0) ? ProxyCheckState::Available : ProxyCheckState::Unavailable,
 				std::max(ping, 0),
 			});
+			if (state->generation != generation) {
+				return;
+			}
 			if (const auto done = base::take(job->done)) {
 				done(ping);
 			}

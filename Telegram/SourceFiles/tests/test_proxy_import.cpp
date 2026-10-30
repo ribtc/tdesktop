@@ -151,6 +151,21 @@ int main(int argc, char **argv) {
 	held[0].destroy();
 	Require(independentCallbacks.size() == startedBeforeCancel,
 		"Cancelling an owner from its Checking event must not start its connection.");
+	auto cancelOnResult = Core::ProxyCheckQueue();
+	auto completedAfterCancel = false;
+	auto resultObserver = rpl::lifetime();
+	cancelOnResult.results() | rpl::on_next([&](Core::ProxyCheckResult result) {
+		if (result.state == Core::ProxyCheckState::Available) {
+			cancelOnResult.cancel();
+		}
+	}, resultObserver);
+	auto resultOwner = cancelOnResult.enqueue({}, runner, [&](int) {
+		completedAfterCancel = true;
+	});
+	const auto completeResult = independentCallbacks.back();
+	completeResult(12);
+	Require(!completedAfterCancel,
+		"Cancelling from a result observer suppresses the owner's completion callback.");
 	auto existing = Core::ProxyEntry();
 	existing.proxy.type = MTP::ProxyData::Type::Socks5;
 	existing.proxy.host = u"2001:0db8:0000::1"_q;

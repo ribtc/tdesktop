@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/bot_attach_web_view.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "api/api_blocked_peers.h"
 #include "api/api_common.h"
 #include "api/api_sending.h"
@@ -1461,6 +1463,16 @@ void WebViewInstance::maybeChooseAndRequestButton(PeerTypes supported) {
 }
 
 void WebViewInstance::show(ShowArgs &&args) {
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		if (_parentShow) {
+			_parentShow->showToast(error);
+		} else {
+			Ui::Toast::Show(error);
+		}
+		return;
+	}
+
 	if (!_bot->isFullLoaded()) {
 		_botFullWaitingArgs.emplace(std::move(args));
 		return;
@@ -1532,6 +1544,16 @@ void WebViewInstance::show(ShowArgs &&args) {
 }
 
 void WebViewInstance::showGame() {
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		if (_parentShow) {
+			_parentShow->showToast(error);
+		} else {
+			Ui::Toast::Show(error);
+		}
+		return;
+	}
+
 	Expects(v::is<WebViewSourceGame>(_source));
 
 	if (!_bot->isFullLoaded()) {

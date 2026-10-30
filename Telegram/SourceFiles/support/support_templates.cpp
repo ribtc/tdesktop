@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "support/support_templates.h"
 
+#include "main/main_account.h"
+#include "mtproto/http_transport.h"
+
 #include "ui/toast/toast.h"
 #include "data/data_session.h"
 #include "core/shortcuts.h"
@@ -443,11 +446,19 @@ int CountMaxKeyLength(const TemplatesData &data) {
 using namespace details;
 
 struct Templates::Updates {
-	QNetworkAccessManager manager;
+	explicit Updates(MTP::NetworkContext &network)
+	: route(network.snapshot())
+	, manager(network) {
+	}
+	MTP::NetworkSnapshot route;
+	MTP::HttpTransport manager;
 	std::map<QString, QNetworkReply*> requests;
 };
 
 Templates::Templates(not_null<Main::Session*> session) : _session(session) {
+	_session->account().network().changes() | rpl::on_next([=] {
+		_updates = nullptr;
+	}, _lifetime);
 	load();
 	Shortcuts::Requests(
 	) | rpl::on_next([=](not_null<Shortcuts::Request*> request) {
@@ -510,7 +521,7 @@ void Templates::ensureUpdatesCreated() {
 	if (_updates) {
 		return;
 	}
-	_updates = std::make_unique<Updates>();
+	_updates = std::make_unique<Updates>(_session->account().network());
 	QObject::connect(
 		&_updates->manager,
 		&QNetworkAccessManager::finished,
@@ -518,6 +529,18 @@ void Templates::ensureUpdatesCreated() {
 }
 
 void Templates::update() {
+	if (ranges::none_of(_data.files, [](const auto &entry) {
+		return !entry.second.url.isEmpty();
+	})) {
+		return;
+	}
+	if (!_session->account().network().snapshot().httpProxy()) {
+		_session->data().serviceNotification({
+			u"Remote templates require an active SOCKS5 account proxy. "
+			"Local templates remain available."_q,
+		});
+		return;
+	}
 	const auto sendRequest = [&](const QString &path, const QString &url) {
 		ensureUpdatesCreated();
 		if (_updates->requests.find(path) != end(_updates->requests)) {
@@ -538,6 +561,10 @@ void Templates::update() {
 void Templates::updateRequestFinished(QNetworkReply *reply) {
 	reply->deleteLater();
 
+	if (!_updates || !_updates->route.current()) {
+		return;
+	}
+	const auto route = _updates->route;
 	const auto path = [&] {
 		for (const auto &[file, sent] : _updates->requests) {
 			if (sent == reply) {
@@ -573,6 +600,9 @@ void Templates::updateRequestFinished(QNetworkReply *reply) {
 			errors = std::move(result.errors),
 			index = std::move(index)
 		]() mutable {
+			if (!route.current() || !_updates) {
+				return;
+			}
 			const auto &existing = _data.files.at(path);
 			auto &parsed = one.files.at(path);
 			MoveKeys(parsed, existing);

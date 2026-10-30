@@ -127,3 +127,24 @@ target_link_libraries(test_network_context PRIVATE
     desktop-app::lib_crl
     desktop-app::external_qt
 )
+
+add_executable(test_account_consumers)
+init_target(test_account_consumers "(tests)")
+target_include_directories(test_account_consumers PRIVATE ${src_loc})
+nice_target_sources(test_account_consumers ${src_loc}
+PRIVATE
+    core/websocket_client.cpp
+    core/websocket_client.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_account_consumers.cpp
+)
+target_precompile_headers(test_account_consumers PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_account_consumers PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)

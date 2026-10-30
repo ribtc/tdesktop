@@ -15,6 +15,10 @@ namespace Main {
 class Session;
 } // namespace Main
 
+namespace MTP {
+class NetworkContext;
+} // namespace MTP
+
 namespace Wallet {
 
 class Api final {
@@ -30,6 +34,7 @@ public:
 		Fn<void(const QString &url, TimeId expires)> done,
 		Fn<void(const Gram::ApiError &)> fail);
 	void cancelRequest(mtpRequestId requestId);
+	[[nodiscard]] MTP::NetworkContext &network() const;
 
 	[[nodiscard]] static bool IsTimeoutError(const Gram::ApiError &error);
 

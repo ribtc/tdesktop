@@ -28,7 +28,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### core — application lifetime and process-wide services
 - Paths: `SourceFiles/core/`, `SourceFiles/main.cpp`, `SourceFiles/logs*`, `SourceFiles/settings.*`, `SourceFiles/config.h`, `SourceFiles/stdafx.h`, `SourceFiles/tray*`, `SourceFiles/data/raw/`
-- `Core::Application` and startup (`Launcher`, `Sandbox`), app and proxy settings, crash reports, shortcuts, file and mime utilities, the lib_base and lib_ui integration, logging, the tray menu, geolocation and screenshot protection. It must not own link routing, self-update or any feature.
+- `Core::Application` and startup (`Launcher`, `Sandbox`), app and proxy settings, proxy import parsing and bounded protocol-check scheduling, crash reports, shortcuts, file and mime utilities, the lib_base and lib_ui integration, logging, the tray menu, geolocation and screenshot protection. It must not own link routing, self-update or any feature.
 
 ### core/links — links and clickable entities
 - Paths: `SourceFiles/core/deep_links/`, `SourceFiles/core/local_url_handlers*`, `SourceFiles/core/click_handler_types*`, `SourceFiles/core/phone_click_handler*`, `SourceFiles/core/bank_card_click_handler*`

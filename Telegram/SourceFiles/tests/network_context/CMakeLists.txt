@@ -30,3 +30,22 @@ target_precompile_headers(test_network_context PRIVATE
 target_link_libraries(test_network_context PRIVATE Qt6::Core Qt6::Network)
 enable_testing()
 add_test(NAME account_network_context COMMAND test_network_context)
+
+add_executable(test_proxy_import
+    ../test_proxy_import.cpp
+    assertion_log.cpp
+    ../../core/proxy_import.cpp
+    ../../core/proxy_check_queue.cpp
+    ../../core/proxy_library.cpp
+    ../../mtproto/mtproto_proxy_data.cpp
+)
+target_include_directories(test_proxy_import PRIVATE
+    ${source_files}
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_base
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_crl
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_rpl
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/ThirdParty/GSL/include
+)
+target_precompile_headers(test_proxy_import PRIVATE ../../mtproto/network_context.h)
+target_link_libraries(test_proxy_import PRIVATE Qt6::Core Qt6::Network)
+add_test(NAME proxy_import COMMAND test_proxy_import)

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/crash_report_window.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "core/crash_reports.h"
 #include "core/application.h"
 #include "core/sandbox.h"
@@ -569,6 +571,13 @@ void LastCrashedWindow::addReportFieldPart(const QLatin1String &name, const QLat
 }
 
 void LastCrashedWindow::sendReport() {
+	if (!Core::AccountSystemNetworkError().isEmpty()) {
+		_pleaseSendReport.setText(u"Crash upload is unavailable because the "
+			"report may contain account data. You can save it locally."_q);
+		_sendingState = SendingFail;
+		updateControls();
+		return;
+	}
 	if (_checkReply) {
 		_checkReply->deleteLater();
 		_checkReply = nullptr;

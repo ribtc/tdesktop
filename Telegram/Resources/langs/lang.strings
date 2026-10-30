@@ -6482,6 +6482,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_call_status_sure" = "Click on the Camera icon if you want to start a video call.";
 "lng_call_fingerprint_tooltip" = "If the emoji on {user}'s screen are the same, this call is 100% secure";
 
+"lng_call_network_unsupported" = "Real-time calls and screen sharing are unavailable because their media connections cannot yet be isolated through this account’s proxy. Telegram live stream playback remains available.";
+"lng_call_network_blocked" = "This account’s proxy is unavailable or has changed. Reconnect the account’s proxy, then join again.";
+
 "lng_call_error_not_available" = "Sorry, you cannot call {user} because of their privacy settings. You can ask them to modify their setting or to call you instead.";
 "lng_call_error_outdated" = "{user}'s app does not support calls. They need to update their app before you can call them.";
 "lng_call_error_no_camera" = "No camera could be found. Please make sure that your camera is connected to the computer.";
@@ -9409,3 +9412,48 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_proxy_management_delete" = "Delete proxy";
 "lng_proxy_management_check_one" = "Check proxy";
 "lng_proxy_management_unsupported" = "Not available in isolated mode";
+"lng_management_back" = "Back to chats";
+"lng_management_accounts" = "Account management";
+"lng_management_proxies" = "Proxy isolation";
+"lng_management_add" = "Add account";
+"lng_management_groups" = "Manage groups";
+"lng_management_filter_group" = "Group filter";
+"lng_management_filter_status" = "Status filter";
+"lng_management_all" = "All";
+"lng_management_ungrouped" = "Ungrouped";
+"lng_management_ready" = "Proxy verified";
+"lng_management_checking" = "Checking · blocked";
+"lng_management_failed" = "Proxy failed · blocked";
+"lng_management_unbound" = "Unbound · blocked";
+"lng_management_search" = "Search names, phone numbers or tags";
+"lng_management_select_page" = "Select current page";
+"lng_management_select_all" = "Select all matching accounts";
+"lng_management_clear" = "Clear selection";
+"lng_management_move" = "Move to group";
+"lng_management_bind" = "Bind proxy";
+"lng_management_previous" = "Previous page";
+"lng_management_next" = "Next page";
+"lng_management_summary" = "{amount} matches · {selected} selected · Page {current} of {total}";
+"lng_management_actions" = "Account actions";
+"lng_management_group_name" = "Group name";
+"lng_management_create_group" = "Create group";
+"lng_management_rename" = "Rename";
+"lng_management_delete" = "Delete";
+"lng_management_delete_group_confirm" = "Delete this group? Its accounts will become ungrouped. Accounts and proxy bindings are kept.";
+"lng_management_open" = "Open account";
+"lng_management_tags" = "Tags (comma separated)";
+"lng_management_unreadable" = "Account metadata cannot be read. Existing data has been preserved.";
+"lng_management_shared" = "This proxy currently has {amount} account bindings. You are applying it to {selected} selected accounts, adding {added} new bindings. Accounts sharing a proxy may share the same public IP. The target list below is fixed.";
+"lng_management_rejected" = "Failed: account removed or proxy unavailable";
+"lng_management_results" = "Per-account results";
+
+"lng_management_moved" = "Group updated";
+"lng_management_move_failed" = "Failed: account or group unavailable";
+
+"lng_management_replaced" = "Binding changed after this operation";
+
+"lng_management_selection" = "Selection";
+"lng_management_account_column" = "Account";
+"lng_management_group_column" = "Group";
+"lng_management_proxy_column" = "Bound proxy";
+"lng_management_empty" = "No matching accounts";

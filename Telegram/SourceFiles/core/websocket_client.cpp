@@ -45,7 +45,16 @@ WebSocketClient::WebSocketClient(QObject *parent) : QObject(parent) {
 		[=](QAbstractSocket::SocketError) { fail(); });
 }
 
+WebSocketClient::WebSocketClient(
+		MTP::NetworkContext &network,
+		QObject *parent)
+: WebSocketClient(parent) {
+	_route = network.snapshot();
+	network.changes() | rpl::on_next([=] { fail(); }, _lifetime);
+}
+
 WebSocketClient::~WebSocketClient() {
+	_lifetime.destroy();
 	_socket.abort();
 }
 
@@ -57,15 +66,25 @@ void WebSocketClient::connectTo(
 	if (_state != State::Idle) {
 		return;
 	}
+	const auto proxy = _route.httpProxy();
+	if (!proxy) {
+		fail();
+		return;
+	}
 	_host = host;
 	_port = port;
 	_target = requestTarget;
 	_subprotocol = subprotocol;
 	_state = State::Connecting;
+	_socket.setProxy(*proxy);
 	_socket.connectToHostEncrypted(host, quint16(port));
 }
 
 void WebSocketClient::onSslConnected() {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	if (_state != State::Connecting) {
 		return;
 	}
@@ -137,6 +156,10 @@ bool WebSocketClient::readUpgradeResponse() {
 }
 
 void WebSocketClient::onReadyRead() {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	if (_state == State::WaitingUpgrade) {
 		_incoming.append(_socket.readAll());
 		if (!readUpgradeResponse()) {
@@ -246,6 +269,10 @@ bool WebSocketClient::parseFrames() {
 }
 
 void WebSocketClient::writeFrame(const QByteArray &payload, quint8 opcode) {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	const auto length = quint64(payload.size());
 	auto frame = QByteArray();
 	frame.reserve(int(length) + 14);
@@ -289,7 +316,7 @@ void WebSocketClient::sendBinary(const QByteArray &message) {
 }
 
 void WebSocketClient::close() {
-	if (_state == State::Connected) {
+	if (_state == State::Connected && _route.current()) {
 		writeFrame(QByteArray(), kOpcodeClose);
 	}
 	_state = State::Closed;
@@ -302,6 +329,7 @@ void WebSocketClient::fail() {
 	}
 	_failed = true;
 	_state = State::Closed;
+	_socket.abort();
 	if (const auto handler = onClosed) {
 		handler();
 	}

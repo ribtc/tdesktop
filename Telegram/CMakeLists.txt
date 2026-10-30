@@ -488,6 +488,8 @@ PRIVATE
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
     calls/calls_instance.h
+    calls/calls_network.cpp
+    calls/calls_network.h
     calls/calls_panel.cpp
     calls/calls_panel.h
     calls/calls_panel_background.cpp
@@ -561,6 +563,7 @@ PRIVATE
     chat_helpers/ttl_media_layer_widget.h
     core/application.cpp
     core/application.h
+    core/account_network_restrictions.h
     core/proxy_rotation_manager.cpp
     core/proxy_rotation_manager.h
     core/cached_webview_availability.h
@@ -1541,6 +1544,8 @@ PRIVATE
     layout/layout_document_generic_preview.h
     layout/layout_item_base.cpp
     layout/layout_item_base.h
+    main/account_management.cpp
+    main/account_management.h
     main/main_account.cpp
     main/main_account.h
     main/main_app_config.cpp
@@ -1965,6 +1970,8 @@ PRIVATE
     settings/sections/settings_folders.h
     settings/sections/settings_global_ttl.cpp
     settings/sections/settings_global_ttl.h
+    settings/sections/settings_account_management.cpp
+    settings/sections/settings_account_management.h
     settings/sections/settings_information.cpp
     settings/sections/settings_information.h
     settings/settings_intro.cpp
@@ -2442,6 +2449,8 @@ PRIVATE
     window/window_controller.h
     window/window_filters_favorite.cpp
     window/window_filters_favorite.h
+    window/window_account_management.cpp
+    window/window_account_management.h
     window/window_accounts_rail.cpp
     window/window_accounts_rail.h
     window/window_filters_menu.cpp

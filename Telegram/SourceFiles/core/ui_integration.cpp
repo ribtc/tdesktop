@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/ui_integration.h"
 
+#include "core/account_network_restrictions.h"
+#include "ui/toast/toast.h"
+
 #include "api/api_text_entities.h"
 #include "core/local_url_handlers.h"
 #include "core/file_utilities.h"
@@ -63,9 +66,10 @@ const auto kBadPrefix = u"http://"_q;
 		QVariant context) {
 	const auto my = context.value<ClickHandlerContext>();
 	const auto window = my.sessionWindow.get();
-	const auto &active = window
-		? window->session().account()
-		: Core::App().activeAccount();
+	if (!window) {
+		return url;
+	}
+	const auto &active = window->session().account();
 	const auto token = active.mtp().configValues().autologinToken;
 	const auto domains = active.appConfig().get<std::vector<QString>>(
 		"autologin_domains",
@@ -89,13 +93,14 @@ const auto kBadPrefix = u"http://"_q;
 		const QString &url,
 		const QString &domain,
 		QVariant context) {
-	auto &account = Core::App().activeAccount();
-	const auto &config = account.appConfig();
 	const auto my = context.value<ClickHandlerContext>();
 	const auto window = my.sessionWindow.get();
-	const auto show = window
-		? window->uiShow()
-		: my.show;
+	if (!window) {
+		return false;
+	}
+	auto &account = window->session().account();
+	const auto &config = account.appConfig();
+	const auto show = window->uiShow();
 	const auto domains = config.get<std::vector<QString>>(
 		"url_auth_domains",
 		{});
@@ -489,6 +494,10 @@ bool UiIntegration::handleUrlClick(
 		}
 	}
 
+	if (context.value<ClickHandlerContext>().keepWebAuthTokens) {
+		Ui::Toast::Show(AccountWebViewError());
+		return true;
+	}
 	auto parsed = UrlForAutoLogin(url);
 	const auto domain = DomainForAutoLogin(parsed);
 	const auto skip = context.value<ClickHandlerContext>().skipBotAutoLogin;

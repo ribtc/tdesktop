@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace MTP {
+class NetworkContext;
+} // namespace MTP
+
 namespace Core {
 
 enum class GeoLocationAccuracy : uchar {
@@ -52,6 +56,7 @@ struct GeoAddress {
 void ResolveCurrentGeoLocation(Fn<void(GeoLocation)> callback);
 
 void ResolveLocationAddress(
+	MTP::NetworkContext &network,
 	const GeoLocation &location,
 	const QString &language,
 	const QString &token,

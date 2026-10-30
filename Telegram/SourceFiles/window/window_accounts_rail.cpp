@@ -171,7 +171,9 @@ void AccountList::activate(int index) {
 		return;
 	}
 	if (const auto account = _rows[index].account.get()) {
-		Core::App().setActivePrimaryWindow(_controller);
+		const auto controller = _controller;
+		controller->widget()->closeAccountManagement();
+		Core::App().setActivePrimaryWindow(controller);
 		Core::App().domain().maybeActivate(account);
 	}
 }

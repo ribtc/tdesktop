@@ -7,11 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/components/promo_suggestions.h"
 
+#include "main/main_account.h"
+#include "mtproto/network_context.h"
+
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
 #include "base/unixtime.h"
-#include "core/application.h"
-#include "core/core_settings.h"
 #include "data/data_changes.h"
 #include "data/data_histories.h"
 #include "data/data_session.h"
@@ -49,8 +50,11 @@ PromoSuggestions::PromoSuggestions(
 : _session(session)
 , _topPromotionTimer([=] { refreshTopPromotion(); })
 , _firstPromoLoaded(std::move(firstPromoLoaded)) {
-	Core::App().settings().proxy().connectionTypeValue(
+	rpl::single(rpl::empty_value()) | rpl::then(
+		_session->account().network().changes()
 	) | rpl::on_next([=] {
+		_session->api().request(base::take(_topPromotionRequestId)).cancel();
+		_topPromotionNextRequestTime = 0;
 		refreshTopPromotion();
 	}, _lifetime);
 }
@@ -58,6 +62,12 @@ PromoSuggestions::PromoSuggestions(
 PromoSuggestions::~PromoSuggestions() = default;
 
 void PromoSuggestions::refreshTopPromotion() {
+	const auto route = _session->account().network().snapshot();
+	if (!route.allowed()) {
+		_topPromotionTimer.cancel();
+		setTopPromoted(nullptr, QString(), QString());
+		return;
+	}
 	if (_contactBirthdaysLastDayRequest != -1
 		&& _contactBirthdaysLastDayRequest != QDate::currentDate().day()) {
 		_refreshed.fire({});
@@ -72,12 +82,8 @@ void PromoSuggestions::refreshTopPromotion() {
 		return;
 	}
 	const auto key = [&]() -> std::pair<QString, uint32> {
-		if (!Core::App().settings().proxy().isEnabled()) {
-			return {};
-		}
-		const auto &proxy = Core::App().settings().proxy().selected();
-		if (proxy.type != MTP::ProxyData::Type::Mtproto
-			&& proxy.type != MTP::ProxyData::Type::Web) {
+		const auto &proxy = route.proxy;
+		if (proxy.type != MTP::ProxyData::Type::Mtproto) {
 			return {};
 		}
 		return { proxy.host, proxy.port };
@@ -89,6 +95,9 @@ void PromoSuggestions::refreshTopPromotion() {
 	_topPromotionKey = key;
 	_topPromotionRequestId = _session->api().request(MTPhelp_GetPromoData(
 	)).done([=](const MTPhelp_PromoData &result) {
+		if (!route.current()) {
+			return;
+		}
 		_topPromotionRequestId = 0;
 
 		_topPromotionNextRequestTime = result.match([&](const auto &data) {
@@ -170,6 +179,9 @@ void PromoSuggestions::refreshTopPromotion() {
 			base::take(_firstPromoLoaded)();
 		}
 	}).fail([=] {
+		if (!route.current()) {
+			return;
+		}
 		_topPromotionRequestId = 0;
 		const auto now = base::unixtime::now();
 		const auto next = _topPromotionNextRequestTime = now

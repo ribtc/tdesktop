@@ -24,3 +24,7 @@ ctest --test-dir out-network-tests --output-on-failure
 代理库测试覆盖 UUID 与路由保存恢复、一次性迁移、未知格式保留、禁止域名入口以及旧编辑器不能覆盖新版本。测试不读取账号数据。登录前 Storage KV、共享代理撤销、真实代理认证及 UI 行为仍需使用隔离测试目录做集成验证；此独立目标不能证明这些运行时行为。
 
 基础界面提供 `CreateAccountProxyBox(account)` 和 `AccountProxyStatus(account)`。代理管理界面可复用 `CreateAccountProxyEditBox(proxy, save)` 的协议、数字地址和密钥校验，再由回调调用代理库；编辑框本身不修改绑定。账号绑定使用 `bindProxy(id)`、`unbindProxy()` 和 `retryProxy()`，不读取当前窗口账号。
+
+`MTP::HttpTransport` 固定使用一个网络快照。只有已验证且入口为数字 IP 的 SOCKS5 可发送 HTTP(S)，目标域名由代理解析。传入 `NetworkContext &` 的构造方式自动订阅撤销，构造、使用和销毁必须留在上下文所属线程。传入快照的工作线程方式由拥有者同步调用 `revoke()`；它会终止回复并关闭连接池。任何旧代次都不能重新请求或跟随重定向。业务消费者在接受成功结果前仍须检查快照，拒绝已完成但延迟送达的旧回复。
+
+本地 SOCKS5 观察测试确认目标域名在代理握手中传递、HTTP 返回值可读、阻断会同步终止已经到达代理的请求，以及上下文销毁和旧传输复用会失败。未绑定请求也确认未到达本地直接目的端或应用全局代理。测试只监听 loopback，不访问真实账号。它不覆盖操作系统 DNS 抓包、多账号实际文件下载、特殊配置服务、MTP 网页文件/地图/广播分片及应用工作线程集成；这些仍需专用账号和代理环境验证。

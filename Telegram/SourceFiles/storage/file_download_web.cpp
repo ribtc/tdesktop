@@ -7,9 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/file_download_web.h"
 
-#include "storage/cache/storage_cache_types.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+#include "mtproto/http_transport.h"
+#include "storage/cache/storage_cache_types.h"
 
 #include <QtNetwork/QAuthenticator>
 
@@ -19,16 +22,6 @@ constexpr auto kMaxWebFileQueries = 8;
 constexpr auto kMaxHttpRedirects = 5;
 constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 constexpr auto kMaxWebFile = 4000 * int64(1024 * 1024);
-
-std::weak_ptr<WebLoadManager> GlobalLoadManager;
-
-[[nodiscard]] std::shared_ptr<WebLoadManager> GetManager() {
-	auto result = GlobalLoadManager.lock();
-	if (!result) {
-		GlobalLoadManager = result = std::make_shared<WebLoadManager>();
-	}
-	return result;
-}
 
 enum class ProcessResult {
 	Error,
@@ -65,9 +58,11 @@ struct UpdateForLoader {
 
 } // namespace
 
-class WebLoadManager final : public base::has_weak_ptr {
+class WebLoadManager final
+: public base::has_weak_ptr
+, public std::enable_shared_from_this<WebLoadManager> {
 public:
-	WebLoadManager();
+	explicit WebLoadManager(MTP::NetworkContext &context);
 	~WebLoadManager();
 
 	void enqueue(not_null<webFileLoader*> loader);
@@ -101,7 +96,7 @@ private:
 	void resetGeneration();
 	void checkSendNext();
 	void send(const Enqueued &entry);
-	[[nodiscard]] not_null<QNetworkReply*> send(int id, const QString &url);
+	[[nodiscard]] QNetworkReply *send(int id, const QString &url);
 	[[nodiscard]] Sent *findSent(int id, not_null<QNetworkReply*> reply);
 	void removeSent(int id);
 	void progress(
@@ -130,12 +125,15 @@ private:
 	void queueFailedUpdate(int id);
 	void queueFinishedUpdate(int id, const QByteArray &data);
 	void clear();
+	void revoke();
 
 	// Main thread.
 	void sendUpdate(int id, Update &&data);
 
+	const MTP::NetworkSnapshot _route;
+	rpl::lifetime _routeLifetime;
 	QThread _thread;
-	std::unique_ptr<QNetworkAccessManager> _network;
+	std::unique_ptr<MTP::HttpTransport> _network;
 	base::Timer _resetGenerationTimer;
 
 	// Main thread.
@@ -151,13 +149,42 @@ private:
 
 };
 
-WebLoadManager::WebLoadManager()
-: _network(std::make_unique<QNetworkAccessManager>())
+namespace {
+
+struct AccountLoadManager {
+	MTP::NetworkContext *context = nullptr;
+	uint64 generation = 0;
+	std::weak_ptr<WebLoadManager> manager;
+};
+
+std::vector<AccountLoadManager> AccountLoadManagers;
+
+[[nodiscard]] std::shared_ptr<WebLoadManager> GetManager(
+		MTP::NetworkContext &context) {
+	std::erase_if(AccountLoadManagers, [](const AccountLoadManager &entry) {
+		return entry.manager.expired();
+	});
+	const auto route = context.snapshot();
+	if (!route.httpProxy()) {
+		return nullptr;
+	}
+	for (const auto &entry : AccountLoadManagers) {
+		if (entry.context == &context && entry.generation == route.generation) {
+			return entry.manager.lock();
+		}
+	}
+	auto result = std::make_shared<WebLoadManager>(context);
+	AccountLoadManagers.push_back({ &context, route.generation, result });
+	return result;
+}
+
+} // namespace
+
+WebLoadManager::WebLoadManager(MTP::NetworkContext &context)
+: _route(context.snapshot())
+, _network(std::make_unique<MTP::HttpTransport>(_route))
 , _resetGenerationTimer(&_thread, [=] { resetGeneration(); }) {
-	// Follow redirects in Qt itself (the default in Qt 6, but not in Qt 5),
-	// so that unsafe targets (scheme changes or https -> http downgrades)
-	// are rejected by the HTTP layer, not re-issued by redirect() below.
-	_network->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
+	_network->setRedirectPolicy(QNetworkRequest::ManualRedirectPolicy);
 	handleNetworkErrors();
 
 	_network->moveToThread(&_thread);
@@ -166,6 +193,22 @@ WebLoadManager::WebLoadManager()
 		_network = nullptr;
 	});
 	_thread.start();
+	context.changes() | rpl::on_next([=] { revoke(); }, _routeLifetime);
+}
+
+void WebLoadManager::revoke() {
+	const auto guard = shared_from_this();
+	QMetaObject::invokeMethod(_network.get(), [=] {
+		_resetGenerationTimer.cancel();
+		_queue.clear();
+		_previousGeneration.clear();
+		clear();
+		_network->revoke();
+	}, Qt::BlockingQueuedConnection);
+	const auto ids = _ids;
+	for (const auto &[loader, id] : ids) {
+		sendUpdate(id, Error{});
+	}
 }
 
 void WebLoadManager::handleNetworkErrors() {
@@ -188,6 +231,7 @@ void WebLoadManager::handleNetworkErrors() {
 }
 
 WebLoadManager::~WebLoadManager() {
+	_routeLifetime.destroy();
 	_thread.quit();
 	_thread.wait();
 }
@@ -229,6 +273,10 @@ void WebLoadManager::remove(not_null<webFileLoader*> loader) {
 }
 
 void WebLoadManager::enqueue(int id, const QString &url, bool stream) {
+	if (!_route.allowed()) {
+		queueFailedUpdate(id);
+		return;
+	}
 	const auto i = ranges::find(_queue, id, &Enqueued::id);
 	if (i != end(_queue)) {
 		return;
@@ -270,7 +318,8 @@ void WebLoadManager::resetGeneration() {
 }
 
 void WebLoadManager::checkSendNext() {
-	if (_sent.size() >= kMaxWebFileQueries
+	if (!_route.allowed()
+		|| _sent.size() >= kMaxWebFileQueries
 		|| (_queue.empty() && _previousGeneration.empty())) {
 		return;
 	}
@@ -284,7 +333,11 @@ void WebLoadManager::checkSendNext() {
 void WebLoadManager::send(const Enqueued &entry) {
 	const auto id = entry.id;
 	const auto url = entry.url;
-	_sent.emplace(id, Sent{ url, send(id, url), entry.stream });
+	if (const auto reply = send(id, url)) {
+		_sent.emplace(id, Sent{ url, reply, entry.stream });
+	} else {
+		queueFailedUpdate(id);
+	}
 }
 
 void WebLoadManager::removeSent(int id) {
@@ -295,7 +348,10 @@ void WebLoadManager::removeSent(int id) {
 	}
 }
 
-not_null<QNetworkReply*> WebLoadManager::send(int id, const QString &url) {
+QNetworkReply *WebLoadManager::send(int id, const QString &url) {
+	if (!_route.allowed()) {
+		return nullptr;
+	}
 	const auto result = _network->get(QNetworkRequest(url));
 	const auto handleProgress = [=](qint64 ready, qint64 total) {
 		progress(id, result, ready, total);
@@ -335,7 +391,8 @@ void WebLoadManager::progress(
 	const auto statusCode = reply->attribute(
 		QNetworkRequest::HttpStatusCodeAttribute);
 	const auto status = statusCode.isValid() ? statusCode.toInt() : 200;
-	if (status == 301 || status == 302) {
+	if (status == 301 || status == 302 || status == 303
+		|| status == 307 || status == 308) {
 		redirect(id, reply);
 	} else if (status != 200 && status != 206 && status != 416) {
 		LOG(("Network Error: "
@@ -358,7 +415,9 @@ void WebLoadManager::redirect(int id, not_null<QNetworkReply*> reply) {
 
 	if (const auto sent = findSent(id, reply)) {
 		const auto next = reply->url().resolved(url);
-		if (raw.isEmpty() || !IsSupportedWebUrl(next)) {
+		if (raw.isEmpty() || !IsSupportedWebUrl(next)
+			|| (reply->url().scheme() == u"https"_q
+				&& next.scheme() != u"https"_q)) {
 			LOG(("Network Error: "
 				"Bad redirect target in WebLoadManager::redirect() "
 				"for web file loader: %1").arg(QString::fromUtf8(raw)));
@@ -374,7 +433,11 @@ void WebLoadManager::redirect(int id, not_null<QNetworkReply*> reply) {
 		const auto target = next.toString();
 		deleteDeferred(reply);
 		sent->url = target;
-		sent->reply = send(id, target);
+		if (const auto nextReply = send(id, target)) {
+			sent->reply = nextReply;
+		} else {
+			failed(id, reply);
+		}
 	}
 }
 
@@ -457,6 +520,8 @@ void WebLoadManager::failed(int id, not_null<QNetworkReply*> reply) {
 }
 
 void WebLoadManager::deleteDeferred(not_null<QNetworkReply*> reply) {
+	reply->disconnect();
+	reply->abort();
 	reply->deleteLater();
 	_repliesBeingDeleted.erase(
 		ranges::remove(_repliesBeingDeleted, nullptr),
@@ -474,6 +539,7 @@ void WebLoadManager::finished(int id, not_null<QNetworkReply*> reply) {
 
 void WebLoadManager::clear() {
 	for (const auto &[id, sent] : base::take(_sent)) {
+		sent.reply->disconnect();
 		sent.reply->abort();
 		delete sent.reply;
 	}
@@ -512,6 +578,10 @@ void WebLoadManager::queueFinishedUpdate(int id, const QByteArray &data) {
 }
 
 void WebLoadManager::sendUpdate(int id, Update &&data) {
+	const auto guard = shared_from_this();
+	if (!_route.allowed()) {
+		data = Error{};
+	}
 	for (const auto &[loader, loaderId] : _ids) {
 		if (loaderId == id) {
 			_updates.fire(UpdateForLoader{ loader, std::move(data) });
@@ -581,7 +651,11 @@ void webFileLoader::startLoading() {
 	if (_finished) {
 		return;
 	} else if (!_manager) {
-		_manager = GetManager();
+		_manager = GetManager(session().account().network());
+		if (!_manager) {
+			loadFailed();
+			return;
+		}
 		_manager->updates(
 			this
 		) | rpl::on_next([=](const Update &data) {
@@ -627,7 +701,12 @@ void webFileLoader::loadFinished(const QByteArray &data) {
 }
 
 void webFileLoader::loadFailed() {
-	cancel(FailureReason::OtherFailure);
+	const auto route = session().account().network().snapshot();
+	cancel(!route.allowed()
+		? FailureReason::NetworkBlocked
+		: !route.httpProxy()
+		? FailureReason::NetworkUnsupported
+		: FailureReason::OtherFailure);
 }
 
 Storage::Cache::Key webFileLoader::cacheKey() const {

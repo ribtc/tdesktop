@@ -183,6 +183,7 @@ QByteArray ParseRealtimeResponse(const QByteArray &bytes) {
 } // namespace
 
 SpecialConfigRequest::SpecialConfigRequest(
+	NetworkSnapshot route,
 	Fn<void(
 		DcId dcId,
 		const std::string &ip,
@@ -195,10 +196,14 @@ SpecialConfigRequest::SpecialConfigRequest(
 : _callback(std::move(callback))
 , _timeDoneCallback(std::move(timeDoneCallback))
 , _domainString(domainString)
-, _phone(phone) {
+, _phone(phone)
+, _route(std::move(route))
+, _manager(_route) {
 	Expects((_callback == nullptr) != (_timeDoneCallback == nullptr));
 
-	_manager.setProxy(QNetworkProxy::NoProxy);
+	if (!_route.httpProxy()) {
+		return;
+	}
 
 	std::random_device rd;
 	const auto shuffle = [&](int from, int till) {
@@ -237,6 +242,7 @@ SpecialConfigRequest::SpecialConfigRequest(
 }
 
 SpecialConfigRequest::SpecialConfigRequest(
+	NetworkSnapshot route,
 	Fn<void(
 		DcId dcId,
 		const std::string &ip,
@@ -246,6 +252,7 @@ SpecialConfigRequest::SpecialConfigRequest(
 	const QString &domainString,
 	const QString &phone)
 : SpecialConfigRequest(
+	std::move(route),
 	std::move(callback),
 	nullptr,
 	isTestMode,
@@ -254,10 +261,12 @@ SpecialConfigRequest::SpecialConfigRequest(
 }
 
 SpecialConfigRequest::SpecialConfigRequest(
+	NetworkSnapshot route,
 	Fn<void()> timeDoneCallback,
 	bool isTestMode,
 	const QString &domainString)
 : SpecialConfigRequest(
+	std::move(route),
 	nullptr,
 	std::move(timeDoneCallback),
 	isTestMode,
@@ -266,6 +275,9 @@ SpecialConfigRequest::SpecialConfigRequest(
 }
 
 void SpecialConfigRequest::sendNextRequest() {
+	if (!_route.httpProxy()) {
+		return;
+	}
 	Expects(!_attempts.empty());
 
 	const auto attempt = _attempts.back();
@@ -279,6 +291,9 @@ void SpecialConfigRequest::sendNextRequest() {
 }
 
 void SpecialConfigRequest::performRequest(const Attempt &attempt) {
+	if (!_route.httpProxy()) {
+		return;
+	}
 	const auto type = attempt.type;
 	auto url = QUrl();
 	url.setScheme(u"https"_q);
@@ -347,7 +362,7 @@ void SpecialConfigRequest::performRequest(const Attempt &attempt) {
 
 void SpecialConfigRequest::handleHeaderUnixtime(
 		not_null<QNetworkReply*> reply) {
-	if (reply->error() != QNetworkReply::NoError) {
+	if (!_route.httpProxy() || reply->error() != QNetworkReply::NoError) {
 		return;
 	}
 	const auto date = QString::fromLatin1([&] {
@@ -376,6 +391,10 @@ void SpecialConfigRequest::handleHeaderUnixtime(
 void SpecialConfigRequest::requestFinished(
 		Type type,
 		not_null<QNetworkReply*> reply) {
+	if (!_route.httpProxy()) {
+		finalizeRequest(reply);
+		return;
+	}
 	handleHeaderUnixtime(reply);
 	const auto result = finalizeRequest(reply);
 	if (!_callback || result.isEmpty()) {

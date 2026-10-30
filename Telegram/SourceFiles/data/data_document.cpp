@@ -1351,7 +1351,15 @@ void DocumentData::handleLoaderUpdates() {
 		_owner->documentLoadProgress(this);
 	}, [=](FileLoader::Error error) {
 		using FailureReason = FileLoader::FailureReason;
-		if (error.started && _loader) {
+		if (error.failureReason == FailureReason::NetworkBlocked
+			|| error.failureReason == FailureReason::NetworkUnsupported) {
+			if (_loader && !_loader->autoLoading()) {
+				Ui::show(Ui::MakeInformBox(
+					error.failureReason == FailureReason::NetworkBlocked
+						? tr::lng_account_http_blocked(tr::now)
+						: tr::lng_account_http_unsupported(tr::now)));
+			}
+		} else if (error.started && _loader) {
 			const auto origin = _loader->fileOrigin();
 			const auto failedFileName = _loader->fileName();
 			const auto retry = [=] {

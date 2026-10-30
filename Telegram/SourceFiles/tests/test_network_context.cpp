@@ -5,10 +5,16 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "mtproto/network_context.h"
 #include "core/proxy_library.h"
-#include <QtCore/QJsonDocument>
+#include "mtproto/http_transport.h"
+#include "mtproto/network_context.h"
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 
 #include <cstdio>
 #include <cstdlib>
@@ -26,7 +32,113 @@ void Require(bool value, const char *message) {
 
 } // namespace
 
-int main() {
+void TestHttpRouting() {
+	auto server = QTcpServer();
+	Require(server.listen(QHostAddress::LocalHost), "The local proxy starts.");
+	auto unrelated = QTcpServer();
+	Require(unrelated.listen(QHostAddress::LocalHost), "The unrelated proxy starts.");
+	QNetworkProxy::setApplicationProxy(QNetworkProxy(
+		QNetworkProxy::Socks5Proxy,
+		u"127.0.0.1"_q,
+		unrelated.serverPort()));
+	auto account = MTP::NetworkContext();
+	auto proxy = MTP::ProxyData();
+	proxy.type = MTP::ProxyData::Type::Socks5;
+	proxy.host = u"127.0.0.1"_q;
+	proxy.port = server.serverPort();
+	const auto check = account.bind(u"http-account"_q, proxy, false);
+	Require(account.completeValidation(check, true), "The test route is ready.");
+	auto transport = MTP::HttpTransport(account);
+	auto target = QByteArray();
+	auto hold = false;
+	auto pendingSeen = false;
+	QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+		const auto socket = server.nextPendingConnection();
+		const auto stage = std::make_shared<int>(0);
+		const auto buffer = std::make_shared<QByteArray>();
+		QObject::connect(socket, &QTcpSocket::readyRead, socket, [=,
+				&target,
+				&hold,
+				&pendingSeen] {
+			buffer->append(socket->readAll());
+			if (*stage == 0 && buffer->size() >= 3) {
+				buffer->clear();
+				socket->write(QByteArray::fromHex("0500"));
+				*stage = 1;
+			} else if (*stage == 1 && buffer->size() >= 7) {
+				Require(buffer->at(3) == 3,
+					"The destination reaches SOCKS5 as a hostname.");
+				target = buffer->mid(5, uchar(buffer->at(4)));
+				buffer->clear();
+				socket->write(QByteArray::fromHex("050000017f0000010050"));
+				*stage = 2;
+			} else if (*stage == 2 && buffer->contains("\r\n\r\n")) {
+				if (hold) {
+					pendingSeen = true;
+				} else {
+					socket->write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+						"Connection: close\r\n\r\nOK");
+					socket->disconnectFromHost();
+				}
+				*stage = 3;
+			}
+		});
+	});
+	const auto reply = transport.get(QNetworkRequest(
+		QUrl(u"http://account-route.invalid/file"_q)));
+	auto timer = QElapsedTimer();
+	timer.start();
+	while (!reply->isFinished() && timer.elapsed() < 3000) {
+		QCoreApplication::processEvents();
+	}
+	Require(reply->isFinished() && reply->error() == QNetworkReply::NoError
+		&& reply->readAll() == "OK" && target == "account-route.invalid",
+		"HTTP reaches the bound proxy with the destination hostname intact.");
+	hold = true;
+	const auto pending = transport.get(QNetworkRequest(
+		QUrl(u"http://account-route.invalid/pending"_q)));
+	timer.restart();
+	while (!pendingSeen && timer.elapsed() < 3000) {
+		QCoreApplication::processEvents();
+	}
+	Require(pendingSeen, "The pending request has reached its proxy.");
+	account.block();
+	Require(pending->isFinished()
+		&& pending->error() == QNetworkReply::OperationCanceledError,
+		"Blocking the account synchronously aborts its active HTTP reply.");
+	const auto blocked = transport.get(QNetworkRequest(
+		QUrl(u"http://account-route.invalid/blocked"_q)));
+	Require(blocked->isFinished()
+		&& blocked->error() == QNetworkReply::ProxyNotFoundError,
+		"A revoked HTTP transport cannot start another request.");
+	auto temporary = std::make_unique<MTP::NetworkContext>();
+	const auto temporaryCheck = temporary->bind(u"temporary"_q, proxy, false);
+	Require(temporary->completeValidation(temporaryCheck, true),
+		"A temporary account has a valid route.");
+	auto temporaryHttp = MTP::HttpTransport(*temporary);
+	const auto temporaryReply = temporaryHttp.get(QNetworkRequest(
+		QUrl(u"http://account-route.invalid/pending"_q)));
+	temporary = nullptr;
+	Require(temporaryReply->isFinished()
+		&& temporaryReply->error() == QNetworkReply::OperationCanceledError,
+		"Destroying an account closes its outstanding HTTP request.");
+	auto direct = QTcpServer();
+	direct.setProxy(QNetworkProxy::NoProxy);
+	Require(direct.listen(QHostAddress::LocalHost), "The direct observer starts.");
+	auto unbound = MTP::NetworkContext();
+	auto denied = MTP::HttpTransport(unbound);
+	const auto deniedReply = denied.get(QNetworkRequest(QUrl(
+		u"http://127.0.0.1:%1/private"_q.arg(direct.serverPort()))));
+	QCoreApplication::processEvents();
+	Require(deniedReply->error() == QNetworkReply::ProxyNotFoundError
+		&& !direct.hasPendingConnections() && !unrelated.hasPendingConnections(),
+		"An unbound request reaches neither its direct target nor a global proxy.");
+	QNetworkProxy::setApplicationProxy(QNetworkProxy::DefaultProxy);
+}
+
+int main(int argc, char **argv) {
+	const auto app = QCoreApplication(argc, argv);
+	TestHttpRouting();
 	auto library = Core::ProxyLibrary();
 	auto savedProxy = MTP::ProxyData();
 	savedProxy.type = MTP::ProxyData::Type::Socks5;
@@ -91,6 +203,14 @@ int main() {
 		"The bound proxy check must be accepted.");
 	Require(account.snapshot().allowed(),
 		"A successful check must allow connections.");
+	const auto httpProxy = account.snapshot().httpProxy();
+	Require(httpProxy
+		&& httpProxy->type() == QNetworkProxy::Socks5Proxy
+		&& httpProxy->hostName() == u"192.0.2.1"_q
+		&& httpProxy->port() == 1080
+		&& httpProxy->capabilities().testFlag(
+			QNetworkProxy::HostNameLookupCapability),
+		"HTTP uses the account SOCKS5 route and proxy-side DNS.");
 	Require(account.snapshot().proxy.host == u"192.0.2.1"_q,
 		"Connections must use the bound proxy.");
 	Require(!other.snapshot().allowed(),
@@ -115,7 +235,7 @@ int main() {
 		"Blocking one account must leave the other connected.");
 	Require(other.snapshot().proxy.host == u"192.0.2.2"_q,
 		"The other account must retain its own route.");
-	Require(!connected.allowed(),
+	Require(!connected.allowed() && !connected.httpProxy(),
 		"Blocking must immediately revoke an existing connection.");
 	Require(!account.completeValidation(pending, true),
 		"Late checks cannot undo blocking.");
@@ -153,5 +273,12 @@ int main() {
 		"Resolution for a current route can update its address cache.");
 	Require(legacyRoute.proxy.resolvedIPs.empty(),
 		"Existing route snapshots remain unchanged.");
+	auto mtproto = proxy;
+	mtproto.type = MTP::ProxyData::Type::Mtproto;
+	mtproto.password = QString(32, QChar('1'));
+	const auto mtprotoCheck = account.bind(u"mtp"_q, mtproto, false);
+	Require(account.completeValidation(mtprotoCheck, true)
+		&& account.snapshot().allowed() && !account.snapshot().httpProxy(),
+		"MTProto remains available without granting a direct HTTP fallback.");
 	return 0;
 }

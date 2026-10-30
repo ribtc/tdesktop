@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/inline_bot_downloads.h"
 
 #include "base/weak_qptr.h"
+#include "boxes/abstract_box.h"
 #include "core/file_utilities.h"
 #include "data/data_document.h"
 #include "data/data_peer_id.h"
@@ -17,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/file_download_web.h"
 #include "storage/serialize_common.h"
 #include "storage/storage_account.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/chat/attach/attach_bot_downloads.h"
 #include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
@@ -82,7 +84,15 @@ void Downloads::load(
 	loader.loader->updates(
 	) | rpl::on_next_error_done([=] {
 		progress(botId, id);
-	}, [=](FileLoader::Error) {
+	}, [=](FileLoader::Error error) {
+		using Reason = FileLoader::FailureReason;
+		if (error.failureReason == Reason::NetworkBlocked
+			|| error.failureReason == Reason::NetworkUnsupported) {
+			Ui::show(Ui::MakeInformBox(
+				error.failureReason == Reason::NetworkBlocked
+					? tr::lng_account_http_blocked(tr::now)
+					: tr::lng_account_http_unsupported(tr::now)));
+		}
 		fail(botId, id);
 	}, [=] {
 		done(botId, id);

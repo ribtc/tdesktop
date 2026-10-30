@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "iv/iv_controller.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "base/event_filter.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -288,6 +290,11 @@ void Controller::createWindow() {
 }
 
 void Controller::createWebview(const Webview::StorageId &storageId) {
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		showWebviewError({ error });
+		return;
+	}
 	Expects(!_webview);
 
 	const auto window = _window.get();

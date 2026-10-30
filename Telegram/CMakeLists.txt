@@ -488,6 +488,8 @@ PRIVATE
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
     calls/calls_instance.h
+    calls/calls_network.cpp
+    calls/calls_network.h
     calls/calls_panel.cpp
     calls/calls_panel.h
     calls/calls_panel_background.cpp
@@ -561,6 +563,7 @@ PRIVATE
     chat_helpers/ttl_media_layer_widget.h
     core/application.cpp
     core/application.h
+    core/account_network_restrictions.h
     core/proxy_rotation_manager.cpp
     core/proxy_rotation_manager.h
     core/cached_webview_availability.h

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "intro/intro_qr.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "boxes/abstract_box.h"
 #include "data/components/passkeys.h"
 #include "data/data_passkey_deserialize.h"
@@ -394,6 +396,11 @@ void QrWidget::setupPasskeyLink() {
 	}, _passkey->lifetime());
 
 	_passkey->setClickedCallback([=] {
+		const auto error = Core::AccountSystemNetworkError();
+		if (!error.isEmpty()) {
+			showError(rpl::single(error));
+			return;
+		}
 		const auto attempt = [=](
 				const ::Data::Passkey::LoginData &loginData) {
 			const auto initialDc = _passkeyLoginDc;

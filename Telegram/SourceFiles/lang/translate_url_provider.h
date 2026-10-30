@@ -9,9 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "translate_provider.h"
 
+#include "mtproto/network_context.h"
+
 namespace Ui {
 
 [[nodiscard]] std::unique_ptr<TranslateProvider> CreateUrlTranslateProvider(
-	QString urlTemplate);
+	QString urlTemplate,
+	MTP::NetworkContext &network);
 
 } // namespace Ui

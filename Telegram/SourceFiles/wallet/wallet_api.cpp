@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "wallet/wallet_api.h"
 
+#include "main/main_account.h"
+
 #include "apiwrap.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
@@ -150,6 +152,10 @@ mtpRequestId Api::requestStreamingUrl(
 	});
 	scheduleTimeoutCheck();
 	return id;
+}
+
+MTP::NetworkContext &Api::network() const {
+	return _session->account().network();
 }
 
 void Api::cancelRequest(mtpRequestId requestId) {

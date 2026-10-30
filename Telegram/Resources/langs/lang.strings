@@ -6482,6 +6482,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_call_status_sure" = "Click on the Camera icon if you want to start a video call.";
 "lng_call_fingerprint_tooltip" = "If the emoji on {user}'s screen are the same, this call is 100% secure";
 
+"lng_call_network_unsupported" = "Real-time calls and screen sharing are unavailable because their media connections cannot yet be isolated through this account’s proxy. Telegram live stream playback remains available.";
+"lng_call_network_blocked" = "This account’s proxy is unavailable or has changed. Reconnect the account’s proxy, then join again.";
+
 "lng_call_error_not_available" = "Sorry, you cannot call {user} because of their privacy settings. You can ask them to modify their setting or to call you instead.";
 "lng_call_error_outdated" = "{user}'s app does not support calls. They need to update their app before you can call them.";
 "lng_call_error_no_camera" = "No camera could be found. Please make sure that your camera is connected to the computer.";

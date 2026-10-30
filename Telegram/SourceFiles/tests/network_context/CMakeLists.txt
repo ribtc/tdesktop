@@ -30,3 +30,22 @@ target_precompile_headers(test_network_context PRIVATE
 target_link_libraries(test_network_context PRIVATE Qt6::Core Qt6::Network)
 enable_testing()
 add_test(NAME account_network_context COMMAND test_network_context)
+
+add_executable(test_calls_network
+    ../test_calls_network.cpp
+    assertion_log.cpp
+    ../../mtproto/network_context.cpp
+    ../../mtproto/mtproto_proxy_data.cpp
+)
+target_include_directories(test_calls_network PRIVATE
+    ${source_files}
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_base
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_crl
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/lib_rpl
+    ${TELEGRAM_TOOLKIT_ROOT}/Telegram/ThirdParty/GSL/include
+)
+target_precompile_headers(test_calls_network PRIVATE
+    ../../mtproto/network_context.h
+)
+target_link_libraries(test_calls_network PRIVATE Qt6::Core Qt6::Network)
+add_test(NAME calls_network COMMAND test_calls_network)

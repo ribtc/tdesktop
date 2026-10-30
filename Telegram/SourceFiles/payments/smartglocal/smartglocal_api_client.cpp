@@ -75,9 +75,12 @@ namespace {
 
 } // namespace
 
-APIClient::APIClient(PaymentConfiguration configuration)
+APIClient::APIClient(
+	PaymentConfiguration configuration,
+	std::unique_ptr<QNetworkAccessManager> manager)
 : _apiUrl(ComputeApiUrl(configuration))
-, _configuration(configuration) {
+, _configuration(configuration)
+, _manager(std::move(manager)) {
 	_additionalHttpHeaders = {
 		{ "X-PUBLIC-TOKEN", _configuration.publicToken },
 	};
@@ -105,7 +108,7 @@ void APIClient::createTokenWithData(
 		request.setRawHeader(name.toUtf8(), value.toUtf8());
 	}
 	destroyReplyDelayed(std::move(_reply));
-	_reply.reset(_manager.post(request, data));
+	_reply.reset(_manager->post(request, data));
 	const auto finish = [=](Token token, Error error) {
 		crl::on_main([
 			completion,

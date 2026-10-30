@@ -82,43 +82,54 @@ std::vector<AccountTarget> FreezeTargets(const QStringList &ids) {
 	return result;
 }
 
+QString BindingResultText(const AccountTarget &target, uint64 operation) {
+	const auto account = target.account.get();
+	const auto valid = operation
+		&& account
+		&& Identity(account) == target.id;
+	const auto changed = valid
+		&& account->proxyBindingOperation() != operation;
+	const auto status = changed ? tr::lng_management_replaced(tr::now)
+		: valid ? StatusText(Status(account))
+		: tr::lng_management_rejected(tr::now);
+	return target.name + u": "_q + status;
+}
+
 void BindingResults(
 		not_null<Window::Controller*> controller,
 		std::vector<AccountTarget> targets,
 		std::vector<uint64> operations) {
+	Expects(targets.size() == operations.size());
+
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_management_results());
-		struct State {
-			std::vector<AccountTarget> targets;
-			std::vector<uint64> operations;
-		};
-		const auto state = box->lifetime().make_state<State>(targets, operations);
-		const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
-			box, QString(), st::defaultFlatLabel));
-		const auto update = [=] {
-			auto results = QStringList();
-			for (auto i = 0; i != int(state->targets.size()); ++i) {
-				const auto &target = state->targets[i];
-				const auto account = target.account.get();
-				const auto valid = state->operations[i]
-					&& account
-					&& Identity(account) == target.id;
-				const auto changed = valid
-					&& account->proxyBindingOperation() != state->operations[i];
-				const auto status = changed ? tr::lng_management_replaced(tr::now)
-					: valid ? StatusText(Status(account))
-					: tr::lng_management_rejected(tr::now);
-				results.push_back(target.name + u": "_q + status);
-			}
-			label->setText(results.join('\n'));
-		};
-		for (const auto &target : targets) {
+		for (auto i = 0; i != int(targets.size()); ++i) {
+			const auto target = targets[i];
+			const auto operation = operations[i];
+			const auto initial = BindingResultText(target, operation);
+			const auto label = box->addRow(
+				object_ptr<Ui::FlatLabel>(box, initial, st::defaultFlatLabel),
+				style::margins(
+					st::boxRowPadding.left(),
+					i ? 0 : st::boxRowPadding.top(),
+					st::boxRowPadding.right(),
+					(i + 1 == targets.size()) ? st::boxRowPadding.bottom() : 0),
+				style::al_justify);
+			const auto text = label->lifetime().make_state<QString>(initial);
+			const auto update = [=] {
+				const auto next = BindingResultText(target, operation);
+				if (*text != next) {
+					*text = next;
+					label->setText(next);
+				}
+			};
 			if (const auto account = target.account.get()) {
-				account->network().changes() | rpl::on_next(update, box->lifetime());
-				account->sessionChanges() | rpl::on_next(update, box->lifetime());
+				account->network().changes(
+				) | rpl::on_next(update, label->lifetime());
+				account->sessionChanges(
+				) | rpl::on_next(update, label->lifetime());
 			}
 		}
-		update();
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	}));
 }

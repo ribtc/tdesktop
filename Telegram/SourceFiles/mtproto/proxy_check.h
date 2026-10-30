@@ -11,7 +11,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace MTP {
 
-using ProxyCheckConnection = details::ConnectionPointer;
+class ProxyCheckConnection final {
+public:
+	ProxyCheckConnection();
+	ProxyCheckConnection(ProxyCheckConnection &&other);
+	ProxyCheckConnection &operator=(ProxyCheckConnection &&other);
+	ProxyCheckConnection &operator=(std::nullptr_t);
+	~ProxyCheckConnection();
+
+	[[nodiscard]] details::AbstractConnection *get() const;
+	[[nodiscard]] explicit operator bool() const;
+
+private:
+	friend void StartProxyCheck(
+		not_null<Instance*> mtproto,
+		const ProxyData &proxy,
+		bool tryIPv6,
+		ProxyCheckConnection &v4,
+		ProxyCheckConnection &v6,
+		Fn<void(details::AbstractConnection *raw, int ping)> done,
+		Fn<void(details::AbstractConnection *raw)> fail);
+
+	class Private;
+	std::unique_ptr<Private> _private;
+
+};
 
 void ResetProxyCheckers(
 	ProxyCheckConnection &v4,

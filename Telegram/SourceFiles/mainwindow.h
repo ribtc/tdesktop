@@ -25,6 +25,7 @@ enum class EnterPoint : uchar;
 
 namespace Window {
 class MediaPreviewWidget;
+class AccountsRail;
 class SectionMemento;
 struct SectionShow;
 class PasscodeLockWidget;
@@ -65,6 +66,8 @@ public:
 	void setupMain(MsgId singlePeerShowAtMsgId, QPixmap oldContentCache);
 
 	void showSettings();
+	void showAccounts();
+	[[nodiscard]] int accountsRailWidth() const;
 
 	void setInnerFocus() override;
 
@@ -142,6 +145,7 @@ private:
 	object_ptr<Window::SetupEmailLockWidget> _setupEmailLock = { nullptr };
 	object_ptr<Intro::Widget> _intro = { nullptr };
 	object_ptr<MainWidget> _main = { nullptr };
+	object_ptr<Window::AccountsRail> _accountsRail = { nullptr };
 	base::unique_qptr<Ui::LayerStackWidget> _layer;
 	rpl::variable<bool> _boxShown = false;
 	object_ptr<Window::MediaPreviewWidget> _mediaPreview = { nullptr };

@@ -32,22 +32,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "mainwidget.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/layers/generic_box.h"
 #include "boxes/connection_box.h"
 #include "storage/storage_account.h"
 #include "storage/localstorage.h"
 #include "apiwrap.h"
 #include "api/api_updates.h"
+#include "settings/sections/settings_information.h"
 #include "settings/settings_intro.h"
 #include "base/options.h"
 #include "wallet/wallet_panel.h"
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
+#include "window/window_accounts_rail.h"
 #include "window/window_main_menu.h"
 #include "window/window_controller.h" // App::wnd.
 #include "window/window_session_controller.h"
 #include "window/window_setup_email.h"
 #include "window/window_media_preview.h"
+#include "styles/style_layers.h"
 #include "styles/style_window.h"
 
 #include <QtGui/QWindow>
@@ -159,6 +163,7 @@ void MainWindow::finishFirstShow() {
 }
 
 void MainWindow::clearWidgetsHook() {
+	if (_accountsRail) _accountsRail->hide();
 	_mediaPreview.destroy();
 	_main.destroy();
 	_intro.destroy();
@@ -299,6 +304,7 @@ void MainWindow::setupIntro(
 
 	clearWidgets();
 	_intro = std::move(created);
+	recountGeometryConstraints();
 	DragArea::SetupProxyDropArea(_intro.data(), [](const QString &localUrl) {
 		Core::App().openLocalUrl(localUrl, {});
 	});
@@ -339,7 +345,10 @@ void MainWindow::setupMain(
 	auto created = object_ptr<MainWidget>(bodyWidget(), sessionController());
 	clearWidgets();
 	_main = std::move(created);
-	updateControlsGeometry();
+	if (!_accountsRail && controller().isPrimary()) {
+		_accountsRail.create(bodyWidget(), &controller());
+	}
+	recountGeometryConstraints();
 	Ui::SendPendingMoveResizeEvents(_main);
 	_main->controller()->showByInitialId(
 		Window::SectionShow::Way::ClearStack,
@@ -360,6 +369,28 @@ void MainWindow::setupMain(
 	if (const auto strong = weakAnimatedLayer.get()) {
 		strong->hideAllAnimatedRun();
 	}
+}
+
+int MainWindow::accountsRailWidth() const {
+	return (controller().isPrimary() && controller().maybeSession())
+		? st::windowAccountsWidth
+		: 0;
+}
+
+void MainWindow::showAccounts() {
+	if (_passcodeLock || _setupEmailLock || !sessionController()) {
+		return;
+	}
+	const auto session = sessionController();
+	controller().show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(tr::lng_accounts_all());
+		box->setWidth(st::boxWideWidth);
+		auto events = Settings::SetupAccounts(box->verticalLayout(), session);
+		std::move(events.closeRequests) | rpl::on_next([=] {
+			box->closeBox();
+		}, box->lifetime());
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	}));
 }
 
 void MainWindow::showSettings() {
@@ -756,8 +787,13 @@ void MainWindow::updateControlsGeometry() {
 	auto body = bodyWidget()->rect();
 	if (_passcodeLock) _passcodeLock->setGeometry(body);
 	if (_setupEmailLock) _setupEmailLock->setGeometry(body);
-	auto mainLeft = 0;
-	auto mainWidth = body.width();
+	const auto railWidth = accountsRailWidth();
+	if (_accountsRail) {
+		_accountsRail->setGeometry(0, 0, railWidth, body.height());
+		_accountsRail->setVisible(_main && !_passcodeLock && !_setupEmailLock);
+	}
+	auto mainLeft = railWidth;
+	auto mainWidth = body.width() - railWidth;
 	if (const auto session = sessionController()) {
 		if (const auto skip = session->filtersWidth()) {
 			mainLeft += skip;

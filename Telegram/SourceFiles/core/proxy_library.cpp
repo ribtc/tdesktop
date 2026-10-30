@@ -192,6 +192,41 @@ bool ProxyLibrary::remove(const QString &id) {
 	return true;
 }
 
+std::vector<QString> ProxyLibrary::identifiers() const {
+	auto result = std::vector<QString>();
+	for (const auto &entry : _entries) {
+		result.push_back(entry.id);
+	}
+	for (const auto &record : _quarantined) {
+		const auto id = record.toObject().value("id").toString();
+		if (!id.isEmpty()) {
+			result.push_back(id);
+		}
+	}
+	std::sort(result.begin(), result.end());
+	result.erase(std::unique(result.begin(), result.end()), result.end());
+	return result;
+}
+
+bool ProxyLibrary::clear() {
+	if (!_writable) {
+		return false;
+	}
+	const auto ids = identifiers();
+	for (const auto &id : ids) {
+		_changes.fire({ id, true, true });
+	}
+	_entries.clear();
+	_quarantined = {};
+	for (const auto &id : ids) {
+		_changes.fire({ id, false, true });
+	}
+	if (ids.empty()) {
+		_changes.fire({ {}, false, true });
+	}
+	return true;
+}
+
 void ProxyLibrary::importLegacy(
 		const std::vector<MTP::ProxyData> &proxies,
 		const MTP::ProxyData &selected,

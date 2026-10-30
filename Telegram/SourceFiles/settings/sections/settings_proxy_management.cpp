@@ -43,6 +43,17 @@ Core::ProxyLibrary &Library() {
 	return Core::App().settings().proxyLibrary();
 }
 
+bool UpdateConnection(const Core::ProxyEntry &edit) {
+	const auto current = Library().find(edit.id);
+	if (!current || current->revision != edit.revision) {
+		return false;
+	}
+	auto replacement = *current;
+	replacement.proxy = edit.proxy;
+	replacement.tryIPv6 = edit.tryIPv6;
+	return Library().update(replacement);
+}
+
 QString TypeText(const MTP::ProxyData &proxy) {
 	switch (proxy.type) {
 	case MTP::ProxyData::Type::Socks5: return u"SOCKS5"_q;
@@ -186,6 +197,7 @@ private:
 	void notes(QString id);
 	void family(QString id);
 	void remove(std::vector<QString> ids);
+	void clearLibrary();
 	void confirm(std::vector<QString> ids, bool deleting, Fn<void()> done);
 	void check(std::vector<QString> ids);
 	void openImport(bool clipboard);
@@ -215,6 +227,12 @@ ProxyRow::ProxyRow(QWidget *parent, Core::ProxyEntry entry, QString status, Fn<v
 , _entry(std::move(entry))
 , _status(std::move(status))
 , _bindings(BoundAccounts({ _entry.id }).size()) {
+	const auto description = Endpoint(_entry.proxy) + u"\n"_q
+		+ TypeText(_entry.proxy) + u"\n"_q
+		+ tr::lng_proxy_management_unknown(tr::now) + u"\n"_q
+		+ _entry.proxy.user + u"\n"_q + _status;
+	setAccessibleName(description);
+	setToolTip(description);
 	const auto button = Ui::CreateChild<Ui::LinkButton>(this, u"⋯"_q);
 	button->setAccessibleName(tr::lng_proxy_management_edit(tr::now));
 	button->setClickedCallback(std::move(actions));
@@ -452,13 +470,7 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 	}));
 	_tools.push_back(button(tr::lng_proxy_management_file(tr::now), [=] { openImport(false); }));
 	_tools.push_back(button(tr::lng_proxy_management_clipboard(tr::now), [=] { openImport(true); }));
-	_tools.push_back(button(tr::lng_proxy_management_clear(tr::now), [=] {
-		auto ids = std::vector<QString>();
-		for (const auto &entry : Library().entries()) {
-			ids.push_back(entry.id);
-		}
-		remove(std::move(ids));
-	}));
+	_tools.push_back(button(tr::lng_proxy_management_clear(tr::now), [=] { clearLibrary(); }));
 	_tools.push_back(button(tr::lng_proxy_management_check(tr::now), [=] {
 		auto ids = std::vector<QString>();
 		for (const auto &entry : Library().entries()) {
@@ -659,7 +671,7 @@ void ProxyManagement::edit(QString id) {
 			auto changed = saved;
 			changed.proxy = std::move(proxy);
 			confirm({ id }, false, [=] {
-				if (!Library().update(changed)) {
+				if (!UpdateConnection(changed)) {
 					_controller->showToast(tr::lng_proxy_management_changed(tr::now));
 				}
 			});
@@ -709,7 +721,7 @@ void ProxyManagement::family(QString id) {
 			changed.tryIPv6 = check->checked();
 			box->closeBox();
 			confirm({ id }, false, [=] {
-				if (!Library().update(changed)) {
+				if (!UpdateConnection(changed)) {
 					_controller->showToast(tr::lng_proxy_management_changed(tr::now));
 				}
 			});
@@ -725,6 +737,17 @@ void ProxyManagement::remove(std::vector<QString> ids) {
 	confirm(ids, true, [=] {
 		for (const auto &id : ids) {
 			Library().remove(id);
+		}
+	});
+}
+
+void ProxyManagement::clearLibrary() {
+	const auto ids = Library().identifiers();
+	confirm(ids, true, [=] {
+		if (Library().identifiers() != ids) {
+			clearLibrary();
+		} else {
+			Library().clear();
 		}
 	});
 }

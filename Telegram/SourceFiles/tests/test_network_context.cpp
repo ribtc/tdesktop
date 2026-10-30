@@ -151,6 +151,18 @@ int main(int argc, char **argv) {
 	const auto entry = restored.find(id);
 	Require(entry && entry->proxy == savedProxy && entry->tryIPv6,
 		"Restoring preserves the proxy identifier and route.");
+	auto connectionChanges = 0;
+	auto observer = rpl::lifetime();
+	restored.changes() | rpl::on_next([&](Core::ProxyLibraryChange change) {
+		if (change.connection) {
+			++connectionChanges;
+		}
+	}, observer);
+	auto annotated = *entry;
+	annotated.notes = u"Updated note"_q;
+	Require(restored.update(annotated) && connectionChanges == 0
+		&& restored.find(id)->revision == annotated.revision,
+		"Editing a note preserves the route version and never requests reconnect.");
 	auto hostname = savedProxy;
 	hostname.host = u"proxy.example.com"_q;
 	Require(library.add(hostname).isEmpty(),
@@ -211,6 +223,13 @@ int main(int argc, char **argv) {
 			&& corrupt.find(goodId) && !corrupt.find(badId),
 			"Invalid enums, ports and revisions cannot escape quarantine.");
 	}
+	Require(corrupt.identifiers().size() == 2,
+		"Destructive previews include identities of quarantined records.");
+	Require(corrupt.clear() && restored.load(corrupt.serialize())
+		&& restored.identifiers().empty()
+		&& QJsonDocument::fromJson(restored.serialize()).object()
+			.value("entries").toArray().empty(),
+		"An explicit library clear removes valid and quarantined records.");
 	auto account = MTP::NetworkContext();
 	Require(!account.snapshot().allowed(),
 		"An unbound account must not connect.");

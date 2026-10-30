@@ -168,3 +168,26 @@ target_link_libraries(test_calls_network PRIVATE
     desktop-app::lib_crl
     desktop-app::external_qt
 )
+
+add_executable(test_proxy_import)
+init_target(test_proxy_import "(tests)")
+target_include_directories(test_proxy_import PRIVATE ${src_loc})
+nice_target_sources(test_proxy_import ${src_loc}
+PRIVATE
+    core/proxy_check_queue.cpp
+    core/proxy_check_queue.h
+    core/proxy_import.cpp
+    core/proxy_import.h
+    core/proxy_library.cpp
+    core/proxy_library.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_proxy_import.cpp
+)
+target_precompile_headers(test_proxy_import PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_proxy_import PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)

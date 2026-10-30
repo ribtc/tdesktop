@@ -44,6 +44,8 @@ public:
 		bool tryIPv6 = false);
 	bool update(const ProxyEntry &entry);
 	bool remove(const QString &id);
+	[[nodiscard]] std::vector<QString> identifiers() const;
+	bool clear();
 	void importLegacy(
 		const std::vector<MTP::ProxyData> &proxies,
 		const MTP::ProxyData &selected,

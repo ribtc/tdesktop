@@ -1,6 +1,6 @@
 # 多账号管理与账号网络隔离
 
-本文件记录本次需求澄清。已确认范围可作为后续规格的输入；待决定项目不能视为用户已同意的行为。当前尚未实现或完成运行验证。
+本文件记录本次需求澄清。完整规格与实施拆分已确认，当前进入代码实现，尚未完成运行验证。
 
 ## 已确认范围
 
@@ -44,13 +44,13 @@
 | 已有账号如何升级 | 保留登录态和数据，将旧代理导入代理库；完成账号绑定前阻断，不自动给所有账号套用旧全局代理 | 已确认 |
 | 首版代理兼容范围 | 必须支持 SOCKS5 和 MTProto | 已确认 |
 
-首版入口地址继续以 IPv4/IPv6 字面地址作为规格草案默认值，避免引导解析走本机 DNS。HTTP、WEB 和域名配置保留，但不自动用于账号联网。此默认值与验收方法在规格终审时一并核对。
+首版入口地址以 IPv4/IPv6 字面地址作为默认值，避免引导解析走本机 DNS。HTTP、WEB 和域名配置保留，但不自动用于账号联网。
 
 不得因代理类型为 MTProto 就一律禁用网页或音视频功能。网页文件可以通过 `upload.getWebFile` 获取，部分直播媒体通过 `upload.getFile` 和 `inputGroupCallStream` 下载；这些 MTProto 路径应纳入代理隔离支持和验证。任意网页的 WebView 请求、双向实时通话的 WebRTC 媒体连接需要分别核对实际出口。只有具体路径无法满足隔离要求时才阻断并提示，不能把通话信令成功当成媒体已走代理的证据。
 
 此区分同时依据当前源码及官方[网页文件文档](https://core.telegram.org/api/files)、[群通话与直播文档](https://core.telegram.org/api/group-calls)、[通话连接文档](https://core.telegram.org/api/calls)。
 
-可审阅的完整草案见 [功能规格](specs/account-network-isolation.md)。
+完整内容见 [功能规格](specs/account-network-isolation.md)与[实施拆分](specs/account-network-isolation-breakdown.md)。
 
 ## 验收方案草案
 

@@ -583,6 +583,10 @@ PRIVATE
     core/core_settings.h
     core/core_settings_proxy.cpp
     core/core_settings_proxy.h
+    core/proxy_import.cpp
+    core/proxy_import.h
+    core/proxy_check_queue.cpp
+    core/proxy_check_queue.h
     core/proxy_library.cpp
     core/proxy_library.h
     core/crash_report_window.cpp
@@ -1939,6 +1943,8 @@ PRIVATE
     settings/cloud_password/settings_cloud_password_validate_icon.h
     settings/sections/settings_active_sessions.cpp
     settings/sections/settings_active_sessions.h
+    settings/sections/settings_proxy_management.cpp
+    settings/sections/settings_proxy_management.h
     settings/sections/settings_advanced.cpp
     settings/sections/settings_advanced.h
     settings/sections/settings_chat.cpp
@@ -1966,7 +1972,6 @@ PRIVATE
     settings/sections/settings_global_ttl.h
     settings/sections/settings_account_management.cpp
     settings/sections/settings_account_management.h
-    settings/sections/settings_proxy_management.h
     settings/sections/settings_information.cpp
     settings/sections/settings_information.h
     settings/settings_intro.cpp

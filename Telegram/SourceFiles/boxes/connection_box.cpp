@@ -1780,6 +1780,9 @@ void ProxyBox::setupMtprotoCredentials(const ProxyData &data) {
 		(data.type == Type::Mtproto || data.type == Type::Web)
 			? data.password
 			: QString());
+	if (_isolated) {
+		_secret->setEchoMode(QLineEdit::Password);
+	}
 	_secret->move(0, 0);
 	_secret->heightValue(
 	) | rpl::on_next([=, wrap = secretWrap.data()](int height) {

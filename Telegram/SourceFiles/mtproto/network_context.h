@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace MTP {
@@ -36,6 +37,7 @@ struct NetworkSnapshot {
 
 	[[nodiscard]] bool current() const;
 	[[nodiscard]] bool allowed() const;
+	[[nodiscard]] std::optional<QNetworkProxy> httpProxy() const;
 
 private:
 	friend class NetworkContext;

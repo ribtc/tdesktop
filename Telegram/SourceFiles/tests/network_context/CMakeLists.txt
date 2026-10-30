@@ -13,6 +13,7 @@ add_executable(test_network_context
     ../test_network_context.cpp
     assertion_log.cpp
     ../../core/proxy_library.cpp
+    ../../mtproto/http_transport.cpp
     ../../mtproto/network_context.cpp
     ../../mtproto/mtproto_proxy_data.cpp
 )

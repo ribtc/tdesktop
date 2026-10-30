@@ -92,7 +92,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### mtproto — MTProto transport
 - Paths: `SourceFiles/mtproto/`, `SourceFiles/tde2e/`
-- Account-owned network contexts and revocable connection snapshots, DC options and config, auth keys, sessions and resending, TCP, HTTP and TLS connections, proxies and checks, special-config fallback, dedicated loaders, the TL schemes and the tde2e end-to-end binding. It knows nothing about messages, peers or UI.
+- Account-owned network contexts, revocable connection snapshots and fixed-route HTTP transports, DC options and config, auth keys, sessions and resending, TCP, HTTP and TLS connections, proxies and checks, special-config fallback, dedicated loaders, the TL schemes and the tde2e end-to-end binding. It knows nothing about messages, peers or UI.
 
 ### storage/local — encrypted local persistence
 - Paths: `SourceFiles/storage/storage_account*`, `SourceFiles/storage/storage_domain*`, `SourceFiles/storage/localstorage*`, `SourceFiles/storage/details/`, `SourceFiles/storage/serialize_*`, `SourceFiles/storage/storage_file_lock*`

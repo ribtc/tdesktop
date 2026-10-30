@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/details/mtproto_dcenter.h"
 #include "mtproto/details/mtproto_rsa_public_key.h"
 #include "mtproto/special_config_request.h"
+#include "mtproto/network_context.h"
 #include "mtproto/session.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
@@ -204,6 +205,7 @@ private:
 	[[nodiscard]] not_null<QThread*> getThreadForDc(ShiftedDcId shiftedDcId);
 
 	void applyDomainIps(
+		const NetworkSnapshot &request,
 		const QString &host,
 		const QStringList &ips,
 		crl::time expireAt);
@@ -298,8 +300,6 @@ private:
 
 	base::Timer _checkDelayedTimer;
 
-	Core::SettingsProxy &_proxySettings;
-
 	rpl::lifetime _lifetime;
 
 };
@@ -320,8 +320,7 @@ Instance::Private::Private(
 , _instance(instance)
 , _mode(mode)
 , _config(std::move(fields.config))
-, _networkReachability(base::NetworkReachability::Instance())
-, _proxySettings(Core::App().settings().proxy()) {
+, _networkReachability(base::NetworkReachability::Instance()) {
 	Expects(_config != nullptr);
 
 	const auto idealThreadPoolSize = QThread::idealThreadCount();
@@ -371,10 +370,15 @@ Instance::Private::Private(
 		_mainDcIdForced = true;
 	}
 
-	_proxySettings.connectionTypeChanges(
+	_instance->network().changes(
 	) | rpl::on_next([=] {
+		_domainResolver = nullptr;
 		if (_configLoader) {
-			_configLoader->setProxyEnabled(_proxySettings.isEnabled());
+			_configLoader->setProxyEnabled(
+				_instance->network().snapshot().proxy.type != ProxyData::Type::None);
+		}
+		for (const auto &[shiftedDcId, session] : _sessions) {
+			session->reInitConnection();
 		}
 	}, _lifetime);
 }
@@ -395,18 +399,23 @@ void Instance::Private::start() {
 }
 
 void Instance::Private::resolveProxyDomain(const QString &host) {
+	const auto request = _instance->network().snapshot();
+	if (request.state != NetworkState::Legacy) {
+		return;
+	}
 	if (!_domainResolver) {
 		_domainResolver = std::make_unique<DomainResolver>([=](
 				const QString &host,
 				const QStringList &ips,
 				crl::time expireAt) {
-			applyDomainIps(host, ips, expireAt);
+			applyDomainIps(request, host, ips, expireAt);
 		});
 	}
 	_domainResolver->resolve(host);
 }
 
 void Instance::Private::applyDomainIps(
+		const NetworkSnapshot &request,
 		const QString &host,
 		const QStringList &ips,
 		crl::time expireAt) {
@@ -426,8 +435,6 @@ void Instance::Private::applyDomainIps(
 			return false;
 		});
 		if (i == end(current) && copy.isEmpty()) {
-			// Even if the proxy was changed already, we still want
-			// to refreshOptions in all sessions across all instances.
 			return true;
 		}
 		current.erase(i, end(current));
@@ -436,12 +443,15 @@ void Instance::Private::applyDomainIps(
 		}
 		return true;
 	};
-	for (auto &proxy : _proxySettings.list()) {
-		applyToProxy(proxy);
+	if (!request.current()) {
+		return;
 	}
-	auto selected = _proxySettings.selected();
-	if (applyToProxy(selected) && _proxySettings.isEnabled()) {
-		_proxySettings.setSelected(selected);
+	auto selected = _instance->network().snapshot().proxy;
+	if (applyToProxy(selected)
+		&& _instance->network().updateResolved(
+			request,
+			std::move(selected.resolvedIPs),
+			expireAt)) {
 		for (const auto &[shiftedDcId, session] : _sessions) {
 			session->refreshOptions();
 		}
@@ -467,14 +477,16 @@ void Instance::Private::setGoodProxyDomain(
 		}
 		return true;
 	};
-	for (auto &proxy : _proxySettings.list()) {
-		applyToProxy(proxy);
-	}
-
-	auto selected = _proxySettings.selected();
-	if (applyToProxy(selected) && _proxySettings.isEnabled()) {
-		_proxySettings.setSelected(selected);
-		Core::App().refreshGlobalProxy();
+	const auto request = _instance->network().snapshot();
+	auto selected = request.proxy;
+	if (applyToProxy(selected)
+		&& _instance->network().updateResolved(
+			request,
+			std::move(selected.resolvedIPs),
+			selected.resolvedExpireAt)) {
+		for (const auto &[shiftedDcId, session] : _sessions) {
+			session->refreshOptions();
+		}
 	}
 }
 
@@ -528,7 +540,7 @@ void Instance::Private::requestConfig() {
 		[=](const Error &error, const Response &) {
 			return configLoadFail(error);
 		},
-		_proxySettings.isEnabled());
+		(_instance->network().snapshot().proxy.type != ProxyData::Type::None));
 	_configLoader->load();
 }
 
@@ -1946,8 +1958,14 @@ void Instance::Private::prepareToDestroy() {
 
 Instance::Instance(Mode mode, Fields &&fields)
 : QObject()
+, _network(fields.network)
 , _private(std::make_unique<Private>(this, mode, std::move(fields))) {
 	_private->start();
+}
+
+NetworkContext &Instance::network() const {
+	Expects(_network != nullptr);
+	return *_network;
 }
 
 void Instance::resolveProxyDomain(const QString &host) {

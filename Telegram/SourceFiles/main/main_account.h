@@ -20,6 +20,7 @@ enum class StartResult : uchar;
 namespace MTP {
 class AuthKey;
 class Config;
+class NetworkContext;
 } // namespace MTP
 
 namespace Main {
@@ -78,6 +79,8 @@ public:
 	[[nodiscard]] bool destroyingSession() const;
 	[[nodiscard]] rpl::producer<Session*> sessionValue() const;
 	[[nodiscard]] rpl::producer<Session*> sessionChanges() const;
+
+	[[nodiscard]] MTP::NetworkContext &network() const;
 
 	[[nodiscard]] MTP::Instance &mtp() const {
 		return *_mtp;
@@ -145,6 +148,7 @@ private:
 	const not_null<Domain*> _domain;
 	const std::unique_ptr<Storage::Account> _local;
 
+	const std::shared_ptr<MTP::NetworkContext> _network;
 	std::unique_ptr<MTP::Instance> _mtp;
 	rpl::variable<MTP::Instance*> _mtpValue;
 	std::unique_ptr<MTP::Instance> _mtpForKeysDestroy;

@@ -2029,6 +2029,8 @@ PRIVATE
     storage/storage_account.h
     storage/storage_cloud_blob.cpp
     storage/storage_cloud_blob.h
+    storage/storage_account_index.cpp
+    storage/storage_account_index.h
     storage/storage_domain.cpp
     storage/storage_domain.h
     storage/storage_facade.cpp
@@ -2435,6 +2437,8 @@ PRIVATE
     window/window_controller.h
     window/window_filters_favorite.cpp
     window/window_filters_favorite.h
+    window/window_accounts_rail.cpp
+    window/window_accounts_rail.h
     window/window_filters_menu.cpp
     window/window_filters_menu.h
     window/window_history_hider.cpp

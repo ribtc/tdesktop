@@ -94,6 +94,9 @@ public:
 	[[nodiscard]] AuthKeysList getKeysForWrite() const;
 	void addKeysForDestroy(AuthKeysList &&keys);
 
+	void quiesceNetwork(Fn<void()> done);
+	void registerSessionWorker(not_null<QObject*> worker);
+
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
 	int32 dcstate(ShiftedDcId shiftedDcId = 0);

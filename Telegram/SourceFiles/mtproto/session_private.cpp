@@ -213,6 +213,7 @@ void SessionPrivate::appendTestConnection(
 		priority
 	});
 	const auto weak = _testConnections.back().data.get();
+	weak->setParent(this);
 	connect(weak, &AbstractConnection::error, [=](int errorCode) {
 		onError(weak, errorCode);
 	});
@@ -241,7 +242,11 @@ void SessionPrivate::appendTestConnection(
 		//|| isUploadDcId(_shiftedDcId)
 		|| (_realDcType == DcType::Cdn);
 	const auto protocolDcId = getProtocolDcId();
+	const auto network = _options->network;
 	InvokeQueued(_testConnections.back().data, [=] {
+		if (!network.allowed()) {
+			return;
+		}
 		weak->connectToServer(
 			ip,
 			port,

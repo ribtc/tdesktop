@@ -32,6 +32,7 @@
 #include <QtGui/QKeyEvent>
 
 #include "styles/style_boxes.h"
+#include "styles/style_layers.h"
 #include "styles/style_window.h"
 
 namespace Settings {
@@ -297,9 +298,9 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 , _controller(controller)
 , _close(std::move(close))
 , _title(this, tr::lng_proxy_management_import_title(), st::defaultFlatLabel)
-, _hint(this, tr::lng_proxy_management_import_hint(), st::defaultFlatLabel)
+, _hint(this, tr::lng_proxy_management_import_hint(), st::boxLabel)
 , _ipv6(this, tr::lng_proxy_management_family(tr::now), false)
-, _family(this, tr::lng_proxy_management_family_hint(), st::defaultFlatLabel)
+, _family(this, tr::lng_proxy_management_family_hint(), st::boxLabel)
 , _file(this, tr::lng_proxy_management_choose_file(tr::now))
 , _clipboard(this, tr::lng_proxy_management_clipboard(tr::now))
 , _dismiss(this, u"×"_q)
@@ -309,6 +310,8 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 , _scroll(this, st::defaultScrollArea) {
 	setFocusPolicy(Qt::StrongFocus);
 	setAcceptDrops(true);
+	_hint->setBreakEverywhere(true);
+	_family->setBreakEverywhere(true);
 	_body = _scroll->setOwnedWidget(object_ptr<Ui::RpWidget>(this));
 	for (const auto child : std::vector<QWidget*>{ _hint, _ipv6, _family, _drop, _file, _clipboard }) {
 		child->setParent(_body);
@@ -391,7 +394,9 @@ void ProxyImport::preview() {
 	_submit->setDisabled(!valid || !Library().writable());
 	delete _preview.data();
 	_preview = Ui::CreateChild<Ui::FlatLabel>(_body.data(), text.empty()
-		? tr::lng_proxy_management_preview_empty(tr::now) : text.join('\n'), st::defaultFlatLabel);
+		? tr::lng_proxy_management_preview_empty(tr::now) : text.join('\n'), st::boxLabel);
+	_preview->setBreakEverywhere(true);
+	_preview->show();
 	layout();
 }
 

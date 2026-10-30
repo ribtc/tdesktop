@@ -85,14 +85,14 @@ std::vector<AccountTarget> FreezeTargets(const QStringList &ids) {
 void BindingResults(
 		not_null<Window::Controller*> controller,
 		std::vector<AccountTarget> targets,
-		std::vector<uint64> generations) {
+		std::vector<uint64> operations) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_management_results());
 		struct State {
 			std::vector<AccountTarget> targets;
-			std::vector<uint64> generations;
+			std::vector<uint64> operations;
 		};
-		const auto state = box->lifetime().make_state<State>(targets, generations);
+		const auto state = box->lifetime().make_state<State>(targets, operations);
 		const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
 			box, QString(), st::defaultFlatLabel));
 		const auto update = [=] {
@@ -100,11 +100,11 @@ void BindingResults(
 			for (auto i = 0; i != int(state->targets.size()); ++i) {
 				const auto &target = state->targets[i];
 				const auto account = target.account.get();
-				const auto valid = state->generations[i]
+				const auto valid = state->operations[i]
 					&& account
 					&& Identity(account) == target.id;
 				const auto changed = valid
-					&& account->network().snapshot().generation != state->generations[i];
+					&& account->proxyBindingOperation() != state->operations[i];
 				const auto status = changed ? tr::lng_management_replaced(tr::now)
 					: valid ? StatusText(Status(account))
 					: tr::lng_management_rejected(tr::now);
@@ -156,6 +156,8 @@ private:
 	void layout();
 	void save();
 	void groupMenu(bool assign);
+	void showGroupFilterMenu();
+	void showStatusFilterMenu();
 	void moveToGroup(QString group, const std::vector<AccountTarget> &targets);
 	bool readMetadata();
 	void editGroup(QString id = {});
@@ -174,6 +176,10 @@ private:
 	object_ptr<Ui::RpWidget> _rows = { nullptr };
 	object_ptr<Ui::FlatLabel> _summary;
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	Ui::LinkButton *_groupFilter = nullptr;
+	Ui::LinkButton *_statusFilter = nullptr;
+	Ui::LinkButton *_moveSelection = nullptr;
+	Ui::LinkButton *_bindSelection = nullptr;
 	std::vector<Ui::LinkButton*> _tools;
 	std::vector<Ui::LinkButton*> _selectionTools;
 	std::vector<Ui::LinkButton*> _paging;
@@ -279,31 +285,14 @@ AccountManagement::AccountManagement(
 		Core::App().domain().addActivated(environment);
 	}));
 	_tools.push_back(button(tr::lng_management_groups(tr::now), [=] { groupMenu(false); }));
-	_tools.push_back(button(tr::lng_management_filter_group(tr::now), [=] {
-		_menu = base::make_unique_q<Ui::PopupMenu>(this);
-		_menu->addAction(tr::lng_management_all(tr::now), [=] {
-			_query.group.reset(); rebuildRows();
-		});
-		_menu->addAction(tr::lng_management_ungrouped(tr::now), [=] {
-			_query.group = QString(); rebuildRows();
-		});
-		for (auto i = _metadata.groups().begin(); i != _metadata.groups().end(); ++i) {
-			const auto id = i.key();
-			_menu->addAction(i.value(), [=] { _query.group = id; rebuildRows(); });
-		}
-		_menu->popup(QCursor::pos());
-	}));
-	_tools.push_back(button(tr::lng_management_filter_status(tr::now), [=] {
-		_menu = base::make_unique_q<Ui::PopupMenu>(this);
-		_menu->addAction(tr::lng_management_all(tr::now), [=] {
-			_query.status.reset(); rebuildRows();
-		});
-		for (const auto state : { Main::AccountStatus::Ready, Main::AccountStatus::Unbound,
-			Main::AccountStatus::Checking, Main::AccountStatus::Failed }) {
-			_menu->addAction(StatusText(state), [=] { _query.status = state; rebuildRows(); });
-		}
-		_menu->popup(QCursor::pos());
-	}));
+	_groupFilter = button(tr::lng_management_filter_group(tr::now), [=] {
+		showGroupFilterMenu();
+	});
+	_statusFilter = button(tr::lng_management_filter_status(tr::now), [=] {
+		showStatusFilterMenu();
+	});
+	_tools.push_back(_groupFilter);
+	_tools.push_back(_statusFilter);
 	_selectionTools.push_back(button(tr::lng_management_select_page(tr::now), [=] {
 		_selection.select(_page.ids); rebuildRows();
 	}));
@@ -313,8 +302,10 @@ AccountManagement::AccountManagement(
 	_selectionTools.push_back(button(tr::lng_management_clear(tr::now), [=] {
 		_selection.clear(); rebuildRows();
 	}));
-	_selectionTools.push_back(button(tr::lng_management_move(tr::now), [=] { groupMenu(true); }));
-	_selectionTools.push_back(button(tr::lng_management_bind(tr::now), [=] { bindMenu(); }));
+	_moveSelection = button(tr::lng_management_move(tr::now), [=] { groupMenu(true); });
+	_bindSelection = button(tr::lng_management_bind(tr::now), [=] { bindMenu(); });
+	_selectionTools.push_back(_moveSelection);
+	_selectionTools.push_back(_bindSelection);
 	_paging.push_back(button(tr::lng_management_previous(tr::now), [=] {
 		--_query.page; rebuildRows();
 	}));
@@ -388,10 +379,10 @@ void AccountManagement::refresh() {
 void AccountManagement::rebuildRows() {
 	_page = Main::QueryAccounts(_accounts, _metadata, _query);
 	_query.page = _page.page;
-	_tools[2]->setText(_query.group
+	_groupFilter->setText(_query.group
 		? _metadata.groups().value(*_query.group, tr::lng_management_ungrouped(tr::now))
 		: tr::lng_management_filter_group(tr::now));
-	_tools[3]->setText(_query.status ? StatusText(*_query.status)
+	_statusFilter->setText(_query.status ? StatusText(*_query.status)
 		: tr::lng_management_filter_status(tr::now));
 	_rows = object_ptr<Ui::RpWidget>(this);
 	const auto rows = _rows.data();
@@ -486,8 +477,8 @@ void AccountManagement::layout() {
 	_paging[0]->setDisabled(_page.page == 0);
 	_paging[1]->setDisabled(_page.page + 1 == _page.pages);
 	const auto emptySelection = _selection.freeze().isEmpty();
-	_selectionTools[3]->setDisabled(emptySelection);
-	_selectionTools[4]->setDisabled(emptySelection);
+	_moveSelection->setDisabled(emptySelection);
+	_bindSelection->setDisabled(emptySelection);
 }
 
 bool AccountManagement::readMetadata() {
@@ -669,20 +660,47 @@ void AccountManagement::confirmBinding(QString proxy, QStringList ids) {
 		box->addButton(tr::lng_management_bind(), crl::guard(this, [=] {
 			const auto current = Core::App().settings().proxyLibrary().find(proxy);
 			const auto unchanged = current && current->revision == revision;
-			auto generations = std::vector<uint64>();
+			auto operations = std::vector<uint64>();
 			for (const auto &target : targets) {
 				const auto account = target.account.get();
 				const auto valid = unchanged && account && Identity(account) == target.id;
 				const auto accepted = valid && account->bindProxy(proxy);
-				generations.push_back(accepted
-					? account->network().snapshot().generation : 0);
+				operations.push_back(accepted
+					? account->proxyBindingOperation() : 0);
 			}
 			box->closeBox();
-			BindingResults(_controller, targets, std::move(generations));
+			BindingResults(_controller, targets, std::move(operations));
 			scheduleRefresh();
 		}));
 		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 	}));
+}
+
+void AccountManagement::showGroupFilterMenu() {
+	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu->addAction(tr::lng_management_all(tr::now), [=] {
+		_query.group.reset(); rebuildRows();
+	});
+	_menu->addAction(tr::lng_management_ungrouped(tr::now), [=] {
+		_query.group = QString(); rebuildRows();
+	});
+	for (auto i = _metadata.groups().begin(); i != _metadata.groups().end(); ++i) {
+		const auto id = i.key();
+		_menu->addAction(i.value(), [=] { _query.group = id; rebuildRows(); });
+	}
+	_menu->popup(QCursor::pos());
+}
+
+void AccountManagement::showStatusFilterMenu() {
+	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu->addAction(tr::lng_management_all(tr::now), [=] {
+		_query.status.reset(); rebuildRows();
+	});
+	for (const auto state : { Main::AccountStatus::Ready, Main::AccountStatus::Unbound,
+		Main::AccountStatus::Checking, Main::AccountStatus::Failed }) {
+		_menu->addAction(StatusText(state), [=] { _query.status = state; rebuildRows(); });
+	}
+	_menu->popup(QCursor::pos());
 }
 
 void AccountManagement::showResults(QStringList results) {

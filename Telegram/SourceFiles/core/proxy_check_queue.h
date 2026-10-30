@@ -21,12 +21,16 @@ struct ProxyCheckResult {
 class ProxyCheckQueue final {
 public:
 	using Runner = Fn<rpl::lifetime(const ProxyEntry &, Fn<void(int)>)>;
-	explicit ProxyCheckQueue(Runner runner);
+	explicit ProxyCheckQueue(Runner runner = {});
 	~ProxyCheckQueue();
 	ProxyCheckQueue(const ProxyCheckQueue &) = delete;
 	ProxyCheckQueue &operator=(const ProxyCheckQueue &) = delete;
 	void start(std::vector<ProxyEntry> entries);
 	void cancel();
+	[[nodiscard]] rpl::lifetime enqueue(
+		ProxyEntry entry,
+		Runner runner,
+		Fn<void(int)> done);
 	[[nodiscard]] rpl::producer<ProxyCheckResult> results() const;
 
 private:

@@ -15,11 +15,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/cache/storage_cache_types.h"
 
 #include <QtNetwork/QAuthenticator>
+#include <array>
 
 namespace {
 
 constexpr auto kMaxWebFileQueries = 8;
 constexpr auto kMaxHttpRedirects = 5;
+constexpr auto kHttpRedirectStatuses = std::array{ 301, 302, 303, 307, 308 };
 constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 constexpr auto kMaxWebFile = 4000 * int64(1024 * 1024);
 
@@ -391,8 +393,7 @@ void WebLoadManager::progress(
 	const auto statusCode = reply->attribute(
 		QNetworkRequest::HttpStatusCodeAttribute);
 	const auto status = statusCode.isValid() ? statusCode.toInt() : 200;
-	if (status == 301 || status == 302 || status == 303
-		|| status == 307 || status == 308) {
+	if (ranges::contains(kHttpRedirectStatuses, status)) {
 		redirect(id, reply);
 	} else if (status != 200 && status != 206 && status != 416) {
 		LOG(("Network Error: "

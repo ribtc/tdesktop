@@ -98,6 +98,74 @@ int main(int argc, char **argv) {
 	reentrant.start(entries);
 	Require(startsAfterCancel == 0,
 		"Cancellation from a status observer prevents the pending connection start.");
+	auto independent = Core::ProxyCheckQueue();
+	auto independentCallbacks = std::vector<Fn<void(int)>>();
+	auto owners = std::vector<rpl::lifetime>();
+	auto independentRunning = 0;
+	auto independentResults = 0;
+	const auto runner = [&](const Core::ProxyEntry &, Fn<void(int)> done) {
+		++independentRunning;
+		independentCallbacks.push_back(std::move(done));
+		return rpl::lifetime([&] { --independentRunning; });
+	};
+	for (auto i = 0; i != 500; ++i) {
+		owners.push_back(independent.enqueue({}, runner, [&](int) {
+			++independentResults;
+		}));
+	}
+	Require(independentRunning == 4 && independentCallbacks.size() == 4,
+		"Restoring 500 independent owners shares the four-check limit.");
+	owners[4].destroy();
+	owners[0].destroy();
+	Require(independentRunning == 4 && independentCallbacks.size() == 5,
+		"Cancelling one running owner starts the next uncancelled queued owner.");
+	independentCallbacks[0](7);
+	Require(independentResults == 0 && independentRunning == 4,
+		"A cancelled owner's late success cannot publish or free another slot.");
+	const auto second = independentCallbacks[1];
+	second(-1);
+	Require(independentResults == 1 && independentRunning == 4,
+		"A failure completes one owner and admits another queued owner.");
+	independent.cancel();
+	Require(independentRunning == 0, "Cancelling the queue stops all owners.");
+	for (const auto &done : independentCallbacks) {
+		done(5);
+	}
+	Require(independentResults == 1,
+		"No cancelled owner can deliver a late result after queue cancellation.");
+
+	auto cancelOnStart = Core::ProxyCheckQueue();
+	auto pendingOwner = rpl::lifetime();
+	auto held = std::vector<rpl::lifetime>();
+	for (auto i = 0; i != 4; ++i) {
+		held.push_back(cancelOnStart.enqueue({}, runner, [](int) {}));
+	}
+	pendingOwner = cancelOnStart.enqueue({}, runner, [](int) {});
+	auto observer = rpl::lifetime();
+	cancelOnStart.results() | rpl::on_next([&](Core::ProxyCheckResult result) {
+		if (result.state == Core::ProxyCheckState::Checking) {
+			pendingOwner.destroy();
+		}
+	}, observer);
+	const auto startedBeforeCancel = independentCallbacks.size();
+	held[0].destroy();
+	Require(independentCallbacks.size() == startedBeforeCancel,
+		"Cancelling an owner from its Checking event must not start its connection.");
+	auto cancelOnResult = Core::ProxyCheckQueue();
+	auto completedAfterCancel = false;
+	auto resultObserver = rpl::lifetime();
+	cancelOnResult.results() | rpl::on_next([&](Core::ProxyCheckResult result) {
+		if (result.state == Core::ProxyCheckState::Available) {
+			cancelOnResult.cancel();
+		}
+	}, resultObserver);
+	auto resultOwner = cancelOnResult.enqueue({}, runner, [&](int) {
+		completedAfterCancel = true;
+	});
+	const auto completeResult = independentCallbacks.back();
+	completeResult(12);
+	Require(!completedAfterCancel,
+		"Cancelling from a result observer suppresses the owner's completion callback.");
 	auto existing = Core::ProxyEntry();
 	existing.proxy.type = MTP::ProxyData::Type::Socks5;
 	existing.proxy.host = u"2001:0db8:0000::1"_q;

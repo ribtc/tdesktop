@@ -105,6 +105,10 @@ QString Account::proxyBindingId() const {
 	return _local->readPref<QString>("account-proxy-binding");
 }
 
+uint64 Account::proxyBindingOperation() const {
+	return _proxyBindingOperation;
+}
+
 bool Account::pendingLogin() const {
 	return _local->readPref<bool>("account-pending-login");
 }
@@ -114,6 +118,8 @@ bool Account::bindProxy(const QString &id) {
 	if (!entry || !Core::ProxyLibrary::Supported(entry->proxy)) {
 		return false;
 	}
+	++_proxyBindingOperation;
+	_proxyRetryDelay = 5000;
 	_local->writePref<QString>("account-proxy-binding", id);
 	_local->writePref<bool>("account-pending-login", !sessionExists());
 	_domain->scheduleWriteAccounts();
@@ -122,6 +128,8 @@ bool Account::bindProxy(const QString &id) {
 }
 
 void Account::unbindProxy() {
+	++_proxyBindingOperation;
+	_proxyRetryDelay = 5000;
 	cancelProxyCheck();
 	_local->writePref<QString>("account-proxy-binding", QString());
 	const auto unbound = _network->bind({}, {}, false);
@@ -137,6 +145,7 @@ void Account::cancelPendingLogin() {
 }
 
 void Account::cancelProxyCheck() {
+	_proxyCheckLifetime.destroy();
 	_proxyCheckTimer.cancel();
 	MTP::ResetProxyCheckers(_proxyCheckV4, _proxyCheckV6);
 }
@@ -171,10 +180,26 @@ void Account::startProxyCheck() {
 		_network->completeValidation(checking, false);
 		return;
 	}
-	_proxyCheckTimer.setCallback(crl::guard(this, [=] {
-		cancelProxyCheck();
-		_network->completeValidation(checking, false);
-	}));
+	_proxyCheckLifetime = _domain->proxyChecks().enqueue(
+		*entry,
+		crl::guard(this, [=](const Core::ProxyEntry &, Fn<void(int)> done) {
+			return runProxyCheck(checking, std::move(done));
+		}),
+		crl::guard(this, [=](int ping) {
+			if (_network->completeValidation(checking, ping >= 0)) {
+				if (ping >= 0) {
+					_proxyRetryDelay = 5000;
+				} else {
+					scheduleProxyRetry();
+				}
+			}
+		}));
+}
+
+rpl::lifetime Account::runProxyCheck(
+		MTP::NetworkSnapshot checking,
+		Fn<void(int)> done) {
+	_proxyCheckTimer.setCallback([=] { done(-1); });
 	_proxyCheckTimer.callOnce(15000);
 	MTP::StartProxyCheck(
 		_mtp.get(),
@@ -182,13 +207,8 @@ void Account::startProxyCheck() {
 		checking.tryIPv6,
 		_proxyCheckV4,
 		_proxyCheckV6,
-		crl::guard(this, [=](MTP::details::AbstractConnection*, int) {
-			crl::on_main(this, [=] {
-				if (checking.current()) {
-					cancelProxyCheck();
-					_network->completeValidation(checking, true);
-				}
-			});
+		crl::guard(this, [=](MTP::details::AbstractConnection*, int ping) {
+			crl::on_main(this, [=] { done(ping); });
 		}),
 		crl::guard(this, [=](MTP::details::AbstractConnection *raw) {
 			crl::on_main(this, [=] {
@@ -197,11 +217,29 @@ void Account::startProxyCheck() {
 				}
 				MTP::DropProxyChecker(_proxyCheckV4, _proxyCheckV6, raw);
 				if (!MTP::HasProxyCheckers(_proxyCheckV4, _proxyCheckV6)) {
-					cancelProxyCheck();
-					_network->completeValidation(checking, false);
+					done(-1);
 				}
 			});
 		}));
+	return rpl::lifetime([=] {
+		_proxyCheckTimer.cancel();
+		MTP::ResetProxyCheckers(_proxyCheckV4, _proxyCheckV6);
+	});
+}
+
+void Account::scheduleProxyRetry() {
+	const auto failed = _network->snapshot();
+	if (failed.state != MTP::NetworkState::Failed) {
+		return;
+	}
+	const auto operation = _proxyBindingOperation;
+	_proxyCheckTimer.setCallback(crl::guard(this, [=] {
+		if (failed.current() && operation == _proxyBindingOperation) {
+			retryProxy();
+		}
+	}));
+	_proxyCheckTimer.callOnce(_proxyRetryDelay);
+	_proxyRetryDelay = std::min(_proxyRetryDelay * 2, crl::time(60000));
 }
 
 void Account::watchProxyChanges() {
@@ -211,6 +249,8 @@ void Account::watchProxyChanges() {
 			return;
 		}
 		if (change.before) {
+			++_proxyBindingOperation;
+			_proxyRetryDelay = 5000;
 			cancelProxyCheck();
 			_network->block();
 		} else if (Core::App().settings().proxyLibrary().find(change.id)) {
@@ -588,8 +628,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 				&& _network->snapshot().state == MTP::NetworkState::Ready) {
 				cancelProxyCheck();
 				_network->block();
-				_proxyCheckTimer.setCallback(crl::guard(this, [=] { retryProxy(); }));
-				_proxyCheckTimer.callOnce(5000);
+				scheduleProxyRetry();
 			}
 		}
 	});

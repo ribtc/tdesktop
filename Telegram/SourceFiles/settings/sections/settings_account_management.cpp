@@ -1,5 +1,6 @@
 #include "settings/sections/settings_account_management.h"
 
+#include "base/invoke_queued.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/proxy_library.h"
@@ -243,7 +244,7 @@ void AccountRow::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	auto p = Painter(this);
-	p.fillRect(e->rect(), _selected ? st::sideBarBgActive : st::windowBg);
+	p.fillRect(e->rect(), _selected ? st::windowBgOver : st::windowBg);
 	const auto pad = st::managementPadding;
 	const auto size = st::managementAvatarSize;
 	const auto left = pad * 2;
@@ -361,7 +362,10 @@ void AccountManagement::scheduleRefresh() {
 		return;
 	}
 	_scheduled = true;
-	Ui::PostponeCall(this, [=] { _scheduled = false; refresh(); });
+	InvokeQueued(this, [=] {
+		_scheduled = false;
+		refresh();
+	});
 }
 
 void AccountManagement::refresh() {

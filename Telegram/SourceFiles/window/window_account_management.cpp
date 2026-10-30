@@ -39,7 +39,7 @@ Management::Management(
 		p.fillRect(nav - st::lineWidth, 0, st::lineWidth, height(), st::shadowFg);
 		const auto row = _proxies ? 2 : 1;
 		p.fillRect(0, row * st::managementControlHeight,
-			nav - st::lineWidth, st::managementControlHeight, st::sideBarBgActive);
+			nav - st::lineWidth, st::managementControlHeight, st::windowBgOver);
 	}, lifetime());
 	const auto back = Ui::CreateChild<Ui::LinkButton>(
 		this, tr::lng_management_back(tr::now));

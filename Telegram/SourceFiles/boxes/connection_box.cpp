@@ -15,8 +15,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/local_url_handlers.h"
+#include "data/data_user.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
+#include "main/main_domain.h"
+#include "mtproto/network_context.h"
 #include "main/main_session.h"
 #include "mtproto/facade.h"
 #include "mtproto/mtproto_config.h"
@@ -703,7 +706,8 @@ public:
 		QWidget*,
 		const ProxyData &data,
 		Fn<void(ProxyData)> callback,
-		Fn<void(ProxyData)> shareCallback);
+		Fn<void(ProxyData)> shareCallback,
+		bool isolated = false);
 
 private:
 	using Type = ProxyData::Type;
@@ -732,6 +736,7 @@ private:
 		not_null<Ui::VerticalLayout*> parent,
 		const QString &text) const;
 
+	const bool _isolated = false;
 	const bool _allowShare = false;
 	Fn<void(ProxyData)> _callback;
 	Fn<void(ProxyData)> _shareCallback;
@@ -1489,8 +1494,10 @@ ProxyBox::ProxyBox(
 	QWidget*,
 	const ProxyData &data,
 	Fn<void(ProxyData)> callback,
-	Fn<void(ProxyData)> shareCallback)
-: _allowShare(data.type != Type::None)
+	Fn<void(ProxyData)> shareCallback,
+	bool isolated)
+: _isolated(isolated)
+, _allowShare(!isolated && data.type != Type::None)
 , _callback(std::move(callback))
 , _shareCallback(std::move(shareCallback))
 , _content(this) {
@@ -1605,7 +1612,9 @@ ProxyData ProxyBox::collectData() {
 	if (web) {
 		result.setWebAddress(_webHost->getLastText());
 	}
-	if (result.host.isEmpty()) {
+	if (_isolated && !Core::ProxyLibrary::Supported(result)) {
+		_host->showError();
+	} else if (result.host.isEmpty()) {
 		if (web) {
 			_webHost->showError();
 		} else {
@@ -1638,6 +1647,9 @@ void ProxyBox::setupTypes() {
 		{ Type::Web, u"WEB"_q },
 	};
 	for (const auto &[type, label] : types) {
+		if (_isolated && type != Type::Socks5 && type != Type::Mtproto) {
+			continue;
+		}
 		_content->add(
 			object_ptr<Ui::Radioenum<Type>>(
 				_content,
@@ -1880,276 +1892,32 @@ void ProxiesBoxController::ShowApplyConfirmation(
 		Type type,
 		const QMap<QString, QString> &fields) {
 	const auto proxy = ProxyDataFromFields(type, fields);
-	if (!proxy) {
-		const auto status = proxy.status();
-		auto box = Ui::MakeInformBox(
-			((status == ProxyData::Status::Unsupported)
-				? tr::lng_proxy_unsupported(tr::now, tr::rich)
-				: (status == ProxyData::Status::IncorrectSecret)
-				? tr::lng_proxy_incorrect_secret(tr::now, tr::rich)
-				: tr::lng_proxy_invalid(tr::now, tr::rich)));
+	const auto account = controller
+		? &controller->session().account()
+		: &Core::App().activeAccount();
+	const auto show = [=](object_ptr<Ui::BoxContent> box) {
 		if (controller) {
 			controller->uiShow()->showBox(std::move(box));
 		} else {
 			Ui::show(std::move(box));
 		}
+	};
+	if (!Core::ProxyLibrary::Supported(proxy)) {
+		show(Ui::MakeInformBox(tr::lng_account_proxy_unsupported()));
 		return;
 	}
-	static const auto UrlStartRegExp = QRegularExpression(
-		"^https://",
-		QRegularExpression::CaseInsensitiveOption);
-	static const auto UrlEndRegExp = QRegularExpression("/$");
-	const auto displayed = "https://"
-		+ ((type == Type::Web) ? proxy.webAddress() : proxy.host)
-		+ "/";
-	const auto parsed = QUrl::fromUserInput(displayed);
-	const auto displayUrl = !UrlClickHandler::IsSuspicious(displayed)
-		? displayed
-		: parsed.isValid()
-		? QString::fromUtf8(parsed.toEncoded())
-		: UrlClickHandler::ShowEncoded(displayed);
-	const auto displayServer = QString(
-		displayUrl
-	).replace(
-		UrlStartRegExp,
-		QString()
-	).replace(UrlEndRegExp, QString());
-	const auto box = [=](not_null<Ui::GenericBox*> box) {
-		box->setTitle(tr::lng_proxy_box_table_title());
-		box->setStyle(st::proxyApplyBox);
-		box->addTopButton(st::boxTitleClose, [=] {
-			box->closeBox();
-		});
-
-		if (ProxyDataIsShareable(proxy) && type != Type::Web) {
-			const auto account = controller
-				? &controller->session().account()
-				: &Core::App().activeAccount();
-			const auto top = box->addTopButton(st::boxTitleMenu);
-			const auto state = top->lifetime().make_state<
-				TopButtonMenuState>();
-			top->setClickedCallback([=] {
-				state->menu = base::make_unique_q<Ui::PopupMenu>(
-					top,
-					st::popupMenuWithIcons);
-				const auto raw = state->menu.get();
-				const auto addAction = Ui::Menu::CreateAddActionCallback(raw);
-				addAction({
-					.text = tr::lng_proxy_edit_share(tr::now),
-					.handler = [=] {
-						ShareProxy(box->uiShow(), account, proxy, false);
-					},
-					.icon = &st::menuIconShare,
-				});
-				addAction({
-					.text = tr::lng_group_invite_context_qr(tr::now),
-					.handler = [=] {
-						ShareProxy(box->uiShow(), account, proxy, true);
-					},
-					.icon = &st::menuIconQrCode,
-				});
-				raw->setForcedOrigin(Ui::PanelAnimation::Origin::TopRight);
-				top->setForceRippled(true);
-				raw->setDestroyedCallback([=] {
-					if (!state->closing) {
-						top->setForceRippled(false);
-					}
-				});
-				raw->popup(top->mapToGlobal(QPoint(
-					top->width(),
-					top->height() - st::lineWidth * 3)));
-				return true;
-			});
-		}
-
-		const auto table = box->addRow(
-			object_ptr<Ui::TableLayout>(
-				box,
-				st::proxyApplyBoxTable),
-			st::proxyApplyBoxTableMargin);
-		const auto addRow = [&](
-				rpl::producer<QString> label,
-				object_ptr<Ui::RpWidget> value) {
-			table->addRow(
-				object_ptr<Ui::FlatLabel>(
-					table,
-					std::move(label),
-					table->st().defaultLabel),
-				std::move(value),
-				st::proxyApplyBoxTableLabelMargin,
-				st::proxyApplyBoxTableValueMargin);
-		};
-		const auto add = [&](
-				const QString &value,
-				rpl::producer<QString> label) {
-			if (!value.isEmpty()) {
-				constexpr auto kOneLineCount = 20;
-				const auto oneLine = value.length() <= kOneLineCount;
-				auto widget = object_ptr<Ui::FlatLabel>(
-					table,
-					rpl::single(Ui::Text::Wrapped(
-						{ value },
-						EntityType::Code,
-						{})),
-					(oneLine
-						? table->st().defaultValue
-						: st::proxyApplyBoxValueMultiline),
-					st::defaultPopupMenu);
-				addRow(std::move(label), std::move(widget));
+	show(Ui::MakeConfirmBox({
+		.text = proxy.host + ':' + QString::number(proxy.port),
+		.confirmed = crl::guard(account, [=](Fn<void()> close) {
+			const auto id = Core::App().settings().proxyLibrary().add(proxy);
+			if (!id.isEmpty()) {
+				account->bindProxy(id);
 			}
-		};
-		if (!displayServer.isEmpty()) {
-			add(displayServer, tr::lng_proxy_box_server());
-		}
-		if (type != Type::Web) {
-			add(QString::number(proxy.port), tr::lng_proxy_box_port());
-		}
-		if (type == Type::Socks5) {
-			add(proxy.user, tr::lng_proxy_box_username());
-			add(proxy.password, tr::lng_proxy_box_password());
-		} else if (type == Type::Mtproto || type == Type::Web) {
-			add(proxy.password, tr::lng_proxy_box_secret());
-		}
-
-		if (type != Type::Web) {
-			struct ProxyCheckStatusState {
-				Checker v4;
-				Checker v6;
-				rpl::variable<TextWithEntities> statusValue;
-				bool finished = false;
-			};
-			const auto state
-				= box->lifetime().make_state<ProxyCheckStatusState>();
-			state->statusValue = Ui::Text::Link(
-				tr::lng_proxy_box_check_status(tr::now));
-			const auto weak = base::make_weak(box);
-			auto statusWidget = object_ptr<Ui::FlatLabel>(
-				table,
-				state->statusValue.value(),
-				table->st().defaultValue,
-				st::defaultPopupMenu);
-			const auto statusLabel = statusWidget.data();
-			addRow(tr::lng_proxy_box_status(), std::move(statusWidget));
-			const auto setUnavailable = [=] {
-				state->statusValue = TextWithEntities{
-					tr::lng_proxy_box_table_unavailable(tr::now),
-				};
-				statusLabel->setTextColorOverride(
-					st::proxyRowStatusFgOffline->c);
-			};
-			const auto runCheck = [=] {
-				if (!weak) {
-					return;
-				}
-				const auto account = controller
-					? &controller->session().account()
-					: &Core::App().activeAccount();
-				state->finished = false;
-				state->statusValue = TextWithEntities{
-					tr::lng_proxy_box_table_checking(tr::now),
-				};
-				statusLabel->setTextColorOverride(st::proxyRowStatusFg->c);
-				MTP::StartProxyCheck(
-					&account->mtp(),
-					proxy,
-					Core::App().settings().proxy().tryIPv6(),
-					state->v4,
-					state->v6,
-					[=](Connection *raw, int ping) {
-						if (!weak || state->finished) {
-							return;
-						}
-						MTP::DropProxyChecker(state->v4, state->v6, raw);
-						state->finished = true;
-						MTP::ResetProxyCheckers(state->v4, state->v6);
-						state->statusValue = TextWithEntities{
-							tr::lng_proxy_box_table_available(
-								tr::now,
-								lt_ping,
-								QString::number(ping)),
-						};
-						statusLabel->setTextColorOverride(
-							st::proxyRowStatusFgAvailable->c);
-					},
-					[=](Connection *raw) {
-						if (!weak || state->finished) {
-							return;
-						}
-						MTP::DropProxyChecker(state->v4, state->v6, raw);
-						if (!MTP::HasProxyCheckers(state->v4, state->v6)) {
-							state->finished = true;
-							setUnavailable();
-						}
-					});
-				if (!MTP::HasProxyCheckers(state->v4, state->v6)) {
-					state->finished = true;
-					setUnavailable();
-				}
-			};
-			statusLabel->setClickHandlerFilter([=](const auto &...) {
-				auto &proxy = Core::App().settings().proxy();
-				if (proxy.checkIpWarningShown()) {
-					runCheck();
-				} else {
-					box->uiShow()->showBox(Ui::MakeConfirmBox({
-						.text = tr::lng_proxy_check_ip_warning(),
-						.confirmed = [=](Fn<void()> close) {
-							auto &proxy = Core::App().settings().proxy();
-							proxy.setCheckIpWarningShown(true);
-							Local::writeSettings();
-							close();
-							runCheck();
-						},
-						.confirmText = tr::lng_proxy_check_ip_proceed(),
-						.title = tr::lng_proxy_check_ip_warning_title(),
-					}));
-				}
-				return false;
-			});
-		}
-
-		if (type == Type::Mtproto || type == Type::Web) {
-			table->addRow(
-				object_ptr<Ui::FlatLabel>(
-					table,
-					(type == Type::Web)
-						? tr::lng_proxy_web_warning()
-						: tr::lng_proxy_sponsor_warning(),
-					st::proxyApplyBoxSponsorLabel),
-				object_ptr<Ui::RpWidget>(nullptr),
-				st::proxyApplyBoxSponsorMargin,
-				st::proxyApplyBoxSponsorMargin);
-		}
-
-		const auto enableButton = box->addButton(
-			tr::lng_proxy_box_table_button(),
-			[=] {
-				auto &settings = Core::App().settings().proxy();
-				if (settings.indexInList(proxy) < 0) {
-					settings.addToList(proxy);
-				}
-				Core::App().setCurrentProxy(
-					proxy,
-					ProxyData::Settings::Enabled);
-				Local::writeSettings();
-				box->closeBox();
-			});
-		enableButton->setFullRadius(true);
-		box->events() | rpl::on_next([=](not_null<QEvent*> e) {
-			if ((e->type() != QEvent::KeyPress) || !enableButton) {
-				return;
-			}
-			const auto k = static_cast<QKeyEvent*>(e.get());
-			if (k->key() == Qt::Key_Enter || k->key() == Qt::Key_Return) {
-				enableButton->clicked({}, Qt::LeftButton);
-			}
-		}, box->lifetime());
-	};
-	if (controller) {
-		controller->uiShow()->showBox(Box(box));
-	} else {
-		Ui::show(Box(box));
-	}
+			close();
+		}),
+		.confirmText = tr::lng_account_proxy_bind(),
+		.title = tr::lng_account_proxy_title(),
+	}));
 }
 
 auto ProxiesBoxController::proxySettingsValue() const
@@ -2211,13 +1979,208 @@ void ProxiesBoxController::refreshChecker(Item &item) {
 	}
 }
 
+QString AccountProxyStatus(not_null<Main::Account*> account) {
+	const auto &library = Core::App().settings().proxyLibrary();
+	if (!library.writable()) {
+		return tr::lng_account_proxy_library_error(tr::now);
+	}
+	const auto id = account->proxyBindingId();
+	const auto entry = library.find(id);
+	if (!id.isEmpty() && (!entry || !Core::ProxyLibrary::Supported(entry->proxy))) {
+		return tr::lng_account_proxy_unsupported(tr::now);
+	}
+	switch (account->network().snapshot().state) {
+	case MTP::NetworkState::Unbound:
+		return tr::lng_account_proxy_unbound(tr::now);
+	case MTP::NetworkState::Checking:
+		return tr::lng_account_proxy_checking(tr::now);
+	case MTP::NetworkState::Ready:
+		return tr::lng_account_proxy_ready(tr::now);
+	default:
+		return tr::lng_account_proxy_failed(tr::now);
+	}
+}
+
+namespace {
+
+int ProxyBindingCount(not_null<Main::Account*> account, const QString &id) {
+	return ranges::count_if(account->domain().accounts(), [&](const auto &entry) {
+		return entry.account->proxyBindingId() == id;
+	});
+}
+
+QString ProxyBoundAccounts(
+		not_null<Main::Account*> account,
+		const QString &id) {
+	auto result = QStringList();
+	for (const auto &[index, other] : account->domain().accounts()) {
+		if (other->proxyBindingId() == id) {
+			result.push_back(QString::number(index + 1) + u": "_q
+				+ (other->sessionExists()
+					? other->session().user()->name()
+					: tr::lng_account_proxy_title(tr::now)));
+		}
+	}
+	return result.join('\n');
+}
+
+void CloseWithAccount(
+		not_null<Ui::GenericBox*> box,
+		not_null<Main::Account*> account) {
+	account->lifetime().add([weak = QPointer<Ui::GenericBox>(box.get())] {
+		if (weak) {
+			weak->closeBox();
+		}
+	});
+}
+
+void ShowAccountProxyEntry(
+		std::shared_ptr<Ui::Show> show,
+		not_null<Main::Account*> account,
+		Core::ProxyEntry entry) {
+	show->showBox(Box([=](not_null<Ui::GenericBox*> box) {
+		CloseWithAccount(box, account);
+		box->setTitle(rpl::single(entry.proxy.host));
+		const auto count = ProxyBindingCount(account, entry.id);
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_account_proxy_shared(
+				tr::now,
+				lt_count,
+				count)
+				+ u"\n\n"_q + ProxyBoundAccounts(account, entry.id),
+			st::boxLabel));
+		if (Core::ProxyLibrary::Supported(entry.proxy)) {
+			box->addButton(tr::lng_account_proxy_bind(), crl::guard(account, [=] {
+				if (account->bindProxy(entry.id)) {
+					box->closeBox();
+				}
+			}));
+		} else {
+			box->addRow(object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_account_proxy_unsupported(),
+				st::boxLabel));
+		}
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		const auto edit = box->addRow(object_ptr<Ui::SettingsButton>(
+			box,
+			tr::lng_proxy_menu_edit()));
+		edit->setClickedCallback(crl::guard(account, [=] {
+			show->showBox(Ui::MakeConfirmBox({
+				.text = tr::lng_account_proxy_edit_warning(
+					tr::now,
+					lt_count,
+					ProxyBindingCount(account, entry.id))
+					+ u"\n\n"_q + ProxyBoundAccounts(account, entry.id),
+				.confirmed = crl::guard(account, [=](Fn<void()> close) {
+					close();
+					const auto save = crl::guard(account, [=](ProxyData proxy) {
+						auto replacement = entry;
+						replacement.proxy = std::move(proxy);
+						if (!Core::App().settings().proxyLibrary().update(replacement)) {
+							show->showToast(tr::lng_account_proxy_changed(tr::now));
+						}
+					});
+					show->showBox(CreateAccountProxyEditBox(entry.proxy, save));
+				}),
+			}));
+		}));
+		const auto remove = box->addRow(object_ptr<Ui::SettingsButton>(
+			box,
+			tr::lng_proxy_menu_delete()));
+		remove->setClickedCallback(crl::guard(account, [=] {
+			show->showBox(Ui::MakeConfirmBox({
+				.text = tr::lng_account_proxy_edit_warning(
+					tr::now,
+					lt_count,
+					ProxyBindingCount(account, entry.id))
+					+ u"\n\n"_q + ProxyBoundAccounts(account, entry.id),
+				.confirmed = crl::guard(account, [=](Fn<void()> close) {
+					close();
+					Core::App().settings().proxyLibrary().remove(entry.id);
+					box->closeBox();
+				}),
+			}));
+		}));
+	}));
+}
+
+object_ptr<Ui::BoxContent> MakeAccountProxyBox(not_null<Main::Account*> account) {
+	return Box([=](not_null<Ui::GenericBox*> box) {
+		CloseWithAccount(box, account);
+		box->setTitle(tr::lng_account_proxy_title());
+		box->setWidth(st::boxWideWidth);
+		box->setMaxHeight(600);
+		const auto show = box->uiShow();
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			rpl::single(rpl::empty_value())
+				| rpl::then(account->network().changes())
+				| rpl::map([=] { return AccountProxyStatus(account); }),
+			st::boxLabel));
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_account_proxy_numeric(),
+			st::boxLabel));
+		const auto content = box->addRow(object_ptr<Ui::VerticalLayout>(box));
+		const auto refresh = [=] {
+			content->clear();
+			for (const auto &entry : Core::App().settings().proxyLibrary().entries()) {
+				const auto label = (entry.id == account->proxyBindingId()
+					? u"✓ "_q : QString()) + entry.proxy.host
+					+ ':' + QString::number(entry.proxy.port);
+				const auto button = content->add(object_ptr<Ui::SettingsButton>(
+					content,
+					rpl::single(label)));
+				button->setClickedCallback(crl::guard(account, [=] {
+					ShowAccountProxyEntry(show, account, entry);
+				}));
+			}
+		};
+		refresh();
+		Core::App().settings().proxyLibrary().changes(
+		) | rpl::filter([](Core::ProxyLibraryChange change) {
+			return !change.before;
+		}) | rpl::on_next([=] { refresh(); }, box->lifetime());
+		account->network().changes() | rpl::on_next(refresh, box->lifetime());
+		const auto retry = box->addRow(object_ptr<Ui::SettingsButton>(
+			box,
+			tr::lng_reconnecting_try_now()));
+		retry->setClickedCallback(crl::guard(account, [=] { account->retryProxy(); }));
+		const auto unbind = box->addRow(object_ptr<Ui::SettingsButton>(
+			box,
+			tr::lng_account_proxy_unbind()));
+		unbind->setClickedCallback(crl::guard(account, [=] { account->unbindProxy(); }));
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		box->addLeftButton(tr::lng_proxy_add(), crl::guard(account, [=] {
+			const auto save = crl::guard(account, [=](ProxyData proxy) {
+				const auto id = Core::App().settings().proxyLibrary().add(proxy);
+				if (!id.isEmpty()) {
+					account->bindProxy(id);
+				}
+			});
+			show->showBox(CreateAccountProxyEditBox(ProxyData(), save));
+		}));
+	});
+}
+
+} // namespace
+
+object_ptr<Ui::BoxContent> CreateAccountProxyBox(not_null<Main::Account*> account) {
+	return MakeAccountProxyBox(account);
+}
+
+object_ptr<Ui::BoxContent> CreateAccountProxyEditBox(
+		const MTP::ProxyData &proxy,
+		Fn<void(MTP::ProxyData)> save) {
+	return Box<ProxyBox>(proxy, std::move(save), Fn<void(ProxyData)>(), true);
+}
+
 object_ptr<Ui::BoxContent> ProxiesBoxController::CreateOwningBox(
 		not_null<Main::Account*> account,
 		const QString &highlightId) {
-	auto controller = std::make_unique<ProxiesBoxController>(account);
-	auto box = controller->create(highlightId);
-	Ui::AttachAsChild(box, std::move(controller));
-	return box;
+	return CreateAccountProxyBox(account);
 }
 
 object_ptr<Ui::BoxContent> ProxiesBoxController::create(

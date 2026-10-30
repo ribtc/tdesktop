@@ -580,6 +580,8 @@ PRIVATE
     core/core_settings.h
     core/core_settings_proxy.cpp
     core/core_settings_proxy.h
+    core/proxy_library.cpp
+    core/proxy_library.h
     core/crash_report_window.cpp
     core/crash_report_window.h
     core/crash_reports.cpp

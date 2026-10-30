@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "mtproto/mtp_instance.h"
+#include "mtproto/network_context.h"
 #include "mtproto/facade.h"
 #include "main/main_account.h"
 #include "core/application.h"
@@ -246,7 +247,9 @@ ConnectionState::ConnectionState(
 	}
 
 	rpl::combine(
-		Core::App().settings().proxy().connectionTypeValue(),
+		rpl::merge(
+			Core::App().settings().proxy().connectionTypeValue(),
+			_account->network().changes()),
 		rpl::single(QRect()) | rpl::then(_parent->paintRequest())
 	) | rpl::on_next([=] {
 		refreshState();
@@ -313,7 +316,7 @@ void ConnectionState::refreshState() {
 		const auto ready = !Core::UpdaterDisabled()
 			&& (Checker().state() == Checker::State::Ready);
 		const auto state = _account->mtp().dcstate();
-		const auto proxy = Core::App().settings().proxy().isEnabled();
+		const auto proxy = true;
 		if (state == MTP::ConnectingState
 			|| state == MTP::DisconnectedState
 			|| (state < 0 && state > -600)) {
@@ -460,6 +463,11 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 			lt_count,
 			state.waitTillRetry);
 		break;
+	}
+	if (!_account->network().snapshot().allowed()) {
+		result.text = tr::lng_account_proxy_title(tr::now);
+		result.visible = state.exposed;
+		result.progressShown = false;
 	}
 	result.textWidth = st::normalFont->width(result.text);
 	result.contentWidth = (result.textWidth > 0)

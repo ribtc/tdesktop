@@ -110,6 +110,8 @@ init_target(test_network_context "(tests)")
 target_include_directories(test_network_context PRIVATE ${src_loc})
 nice_target_sources(test_network_context ${src_loc}
 PRIVATE
+    core/proxy_library.cpp
+    core/proxy_library.h
     mtproto/network_context.cpp
     mtproto/network_context.h
     mtproto/mtproto_proxy_data.cpp

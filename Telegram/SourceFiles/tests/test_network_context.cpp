@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/network_context.h"
+#include "core/proxy_library.h"
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonArray>
 
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +27,53 @@ void Require(bool value, const char *message) {
 } // namespace
 
 int main() {
+	auto library = Core::ProxyLibrary();
+	auto savedProxy = MTP::ProxyData();
+	savedProxy.type = MTP::ProxyData::Type::Socks5;
+	savedProxy.host = u"192.0.2.9"_q;
+	savedProxy.port = 1080;
+	const auto id = library.add(savedProxy, u"Work"_q, true);
+	Require(!id.isEmpty(), "A new proxy has a stable identifier.");
+	auto restored = Core::ProxyLibrary();
+	Require(restored.load(library.serialize()), "Saved proxies can be restored.");
+	const auto entry = restored.find(id);
+	Require(entry && entry->proxy == savedProxy && entry->tryIPv6,
+		"Restoring preserves the proxy identifier and route.");
+	auto hostname = savedProxy;
+	hostname.host = u"proxy.example.com"_q;
+	Require(library.add(hostname).isEmpty(),
+		"New proxies cannot trigger local name resolution.");
+	auto migrated = Core::ProxyLibrary();
+	migrated.importLegacy({ hostname }, savedProxy, false);
+	Require(migrated.entries().size() == 2,
+		"Unsupported legacy entries and selected proxies are preserved.");
+	const auto legacyId = migrated.entries().front().id;
+	migrated.importLegacy({ savedProxy }, savedProxy, false);
+	Require(migrated.entries().size() == 2
+		&& migrated.entries().front().id == legacyId,
+		"Migration runs only once and preserves identifiers.");
+	auto corrupt = Core::ProxyLibrary();
+	const auto broken = QByteArray("{\"version\":99,\"entries\":[]}");
+	Require(!corrupt.load(broken) && !corrupt.writable()
+		&& corrupt.serialize() == broken && corrupt.add(savedProxy).isEmpty(),
+		"Unknown libraries remain intact and cannot be overwritten.");
+	auto edit = *restored.find(id);
+	auto stale = edit;
+	edit.proxy.host = u"192.0.2.10"_q;
+	Require(restored.update(edit), "An existing proxy can change its route.");
+	Require(restored.find(id)->id == id && restored.find(id)->revision == 2,
+		"Changing a route preserves its identity and advances its revision.");
+	Require(!restored.update(stale),
+		"An old editor cannot overwrite a newer route.");
+	auto malformedRoot = QJsonDocument::fromJson(library.serialize()).object();
+	auto malformedEntries = malformedRoot.value("entries").toArray();
+	auto malformedEntry = malformedEntries.first().toObject();
+	malformedEntry.insert("port", "1080");
+	malformedEntries[0] = malformedEntry;
+	malformedRoot.insert("entries", malformedEntries);
+	const auto malformedBytes = QJsonDocument(malformedRoot).toJson();
+	Require(!corrupt.load(malformedBytes) && corrupt.serialize() == malformedBytes,
+		"Malformed records are preserved without silently rewriting fields.");
 	auto account = MTP::NetworkContext();
 	Require(!account.snapshot().allowed(),
 		"An unbound account must not connect.");

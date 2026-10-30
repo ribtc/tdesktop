@@ -9337,3 +9337,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passcode_strength_advice_fine" = "This passcode is hard to guess.";
 
 // Keys finished
+
+"lng_account_proxy_title" = "Account proxy";
+"lng_account_proxy_unbound" = "Network blocked. Bind a proxy before signing in or connecting.";
+"lng_account_proxy_checking" = "Checking this account's proxy…";
+"lng_account_proxy_ready" = "Proxy verified";
+"lng_account_proxy_failed" = "Network blocked. Proxy verification failed; retry or select another proxy.";
+"lng_account_proxy_unsupported" = "Unsupported configuration. Use SOCKS5 or MTProto with a numeric IP address.";
+"lng_account_proxy_library_error" = "The saved proxy library cannot be read. Original data has been preserved; network access remains blocked.";
+"lng_account_proxy_bind" = "Bind to this account";
+"lng_account_proxy_unbind" = "Unbind and block network";
+"lng_account_proxy_shared#one" = "This proxy is bound to {count} account. Accounts sharing it may share the same network exit.";
+"lng_account_proxy_shared#other" = "This proxy is bound to {count} accounts. Accounts sharing it may share the same network exit.";
+"lng_account_proxy_edit_warning#one" = "Changing or deleting this proxy will disconnect the {count} account bound to it.";
+"lng_account_proxy_edit_warning#other" = "Changing or deleting this proxy will disconnect all {count} accounts bound to it.";
+"lng_account_proxy_numeric" = "Only numeric IPv4 or IPv6 proxy addresses are supported. Host names are not resolved.";
+"lng_account_proxy_changed" = "This proxy changed while the editor was open. Reopen it and try again.";

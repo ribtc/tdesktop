@@ -444,3 +444,12 @@ macCautionIconSize: 16;
 macWindowRoundRadius: 10;
 macWindowShadowTopLeft: icon {{ "mac_window_shadow_top_left", windowShadowFg }};
 macTrayIcon: icon {{ "mac_tray_icon", windowFg }};
+
+managementNavigationWidth: 208px;
+managementPadding: 20px;
+managementGap: 12px;
+managementControlHeight: 42px;
+managementRowHeight: 64px;
+managementAvatarSize: 32px;
+managementWideTable: 680px;
+managementColumnWidth: 140px;

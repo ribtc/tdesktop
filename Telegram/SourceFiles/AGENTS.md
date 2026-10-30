@@ -40,7 +40,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### accounts — accounts and sessions
 - Paths: `SourceFiles/main/`
-- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. It must not own feature logic beyond holding components.
+- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. `account_management` owns local account groups and tags keyed by session identity, filtering, pagination and explicit account selection. It must not own management widgets or network binding implementation.
 
 ### lang — localization
 - Paths: `SourceFiles/lang/`, `SourceFiles/countries/`

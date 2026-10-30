@@ -32,19 +32,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "mainwidget.h"
 #include "ui/boxes/confirm_box.h"
-#include "ui/layers/generic_box.h"
 #include "boxes/connection_box.h"
 #include "storage/storage_account.h"
 #include "storage/localstorage.h"
 #include "apiwrap.h"
 #include "api/api_updates.h"
-#include "settings/sections/settings_information.h"
 #include "settings/settings_intro.h"
 #include "base/options.h"
 #include "wallet/wallet_panel.h"
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
+#include "window/window_account_management.h"
 #include "window/window_accounts_rail.h"
 #include "window/window_main_menu.h"
 #include "window/window_controller.h" // App::wnd.
@@ -163,6 +162,7 @@ void MainWindow::finishFirstShow() {
 }
 
 void MainWindow::clearWidgetsHook() {
+	_accountManagement.destroy();
 	if (_accountsRail) _accountsRail->hide();
 	_mediaPreview.destroy();
 	_main.destroy();
@@ -186,6 +186,7 @@ void MainWindow::preventOrInvoke(Fn<void()> callback) {
 }
 
 void MainWindow::setupPasscodeLock() {
+	closeAccountManagement();
 	auto animated = (_main || _intro);
 	auto oldContentCache = animated ? grabForSlideAnimation() : QPixmap();
 	_passcodeLock.create(bodyWidget(), &controller());
@@ -210,6 +211,7 @@ void MainWindow::setupPasscodeLock() {
 }
 
 void MainWindow::setupSetupEmailLock() {
+	closeAccountManagement();
 	auto animated = (_main || _intro || _passcodeLock);
 	auto oldContentCache = animated ? grabForSlideAnimation() : QPixmap();
 	_setupEmailLock.create(bodyWidget(), &controller());
@@ -378,22 +380,44 @@ int MainWindow::accountsRailWidth() const {
 }
 
 void MainWindow::showAccounts() {
+	showAccountManagement();
+}
+
+void MainWindow::showAccountManagement(bool proxies) {
 	if (_passcodeLock || _setupEmailLock || !sessionController()) {
 		return;
 	}
-	const auto session = sessionController();
-	controller().show(Box([=](not_null<Ui::GenericBox*> box) {
-		box->setTitle(tr::lng_accounts_all());
-		box->setWidth(st::boxWideWidth);
-		auto events = Settings::SetupAccounts(box->verticalLayout(), session);
-		std::move(events.closeRequests) | rpl::on_next([=] {
-			box->closeBox();
-		}, box->lifetime());
-		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-	}));
+	controller().preventOrInvoke([=] {
+		if (_passcodeLock || _setupEmailLock || !_main) {
+			return;
+		}
+		ui_hideSettingsAndLayer(anim::type::instant);
+		_accountManagement.destroy();
+		_accountManagement = Window::CreateAccountManagement(
+			bodyWidget(), &controller(), proxies);
+		_main->hide();
+		_accountManagement->show();
+		updateControlsGeometry();
+		fixOrder();
+		setInnerFocus();
+	});
+}
+
+void MainWindow::closeAccountManagement() {
+	if (!_accountManagement) {
+		return;
+	}
+	_accountManagement.destroy();
+	if (_main && !_passcodeLock && !_setupEmailLock) {
+		_main->show();
+		_main->activate();
+	}
+	updateControlsGeometry();
+	setInnerFocus();
 }
 
 void MainWindow::showSettings() {
+	closeAccountManagement();
 	if (_passcodeLock || _setupEmailLock) {
 		return;
 	}
@@ -661,6 +685,8 @@ void MainWindow::setInnerFocus() {
 		_passcodeLock->setInnerFocus();
 	} else if (_setupEmailLock) {
 		_setupEmailLock->setInnerFocus();
+	} else if (_accountManagement) {
+		_accountManagement->setFocus();
 	} else if (_main) {
 		_main->setInnerFocus();
 	} else if (_intro) {
@@ -671,6 +697,13 @@ void MainWindow::setInnerFocus() {
 bool MainWindow::eventFilter(QObject *object, QEvent *e) {
 	switch (e->type()) {
 	case QEvent::KeyPress: {
+		const auto widget = qobject_cast<QWidget*>(object);
+		if (_accountManagement && !ui_isLayerShown() && widget
+			&& (widget == this || isAncestorOf(widget))
+			&& static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape) {
+			closeAccountManagement();
+			return true;
+		}
 		if (Logs::DebugEnabled()
 			&& object == windowHandle()) {
 			const auto key = static_cast<QKeyEvent*>(e)->key();
@@ -744,6 +777,7 @@ bool MainWindow::takeThirdSectionFromLayer() {
 }
 
 void MainWindow::fixOrder() {
+	if (_accountManagement) _accountManagement->raise();
 	if (_setupEmailLock) _setupEmailLock->raise();
 	if (_passcodeLock) _passcodeLock->raise();
 	if (_layer) _layer->raise();
@@ -807,12 +841,15 @@ void MainWindow::updateControlsGeometry() {
 			mainWidth,
 			body.height() });
 	}
+	if (_accountManagement) {
+		_accountManagement->setGeometry(mainLeft, 0, mainWidth, body.height());
+	}
 	if (_intro) _intro->setGeometry(body);
 	if (_layer) _layer->setGeometry(body);
 	if (_mediaPreview) _mediaPreview->setGeometry(body);
 	if (_testingThemeWarning) _testingThemeWarning->setGeometry(body);
 
-	if (_main) _main->checkMainSectionToLayer();
+	if (_main && !_accountManagement) _main->checkMainSectionToLayer();
 }
 
 void MainWindow::handleStartFiles(QStringList paths) {

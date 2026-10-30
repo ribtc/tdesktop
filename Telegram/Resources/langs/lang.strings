@@ -9457,3 +9457,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_management_group_column" = "Group";
 "lng_management_proxy_column" = "Bound proxy";
 "lng_management_empty" = "No matching accounts";
+
+"lng_proxy_management_column_notes" = "Notes";
+"lng_proxy_management_column_type" = "Type";
+"lng_proxy_management_column_country" = "Country";
+"lng_proxy_management_column_accounts" = "Accounts";
+"lng_proxy_management_column_actions" = "Actions";

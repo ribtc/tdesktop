@@ -139,6 +139,21 @@ rpl::lifetime RunCheck(
 	});
 }
 
+void PaintColumns(Painter &p, int width, int y, const QStringList &values) {
+	const auto pad = st::proxyManagementPadding;
+	const auto available = width - 2 * pad;
+	p.setFont(st::normalFont);
+	p.setPen(st::windowFg);
+	const auto weights = std::array{ 24, 10, 11, 17, 8, 13, 10, 7 };
+	auto x = pad;
+	for (auto i = 0; i != int(weights.size()); ++i) {
+		const auto cell = available * weights[i] / 100;
+		p.drawText(x, y, st::normalFont->elided(values[i],
+			std::max(0, cell - st::proxyManagementGap)));
+		x += cell;
+	}
+}
+
 class ProxyRow final : public Ui::RpWidget {
 public:
 	ProxyRow(QWidget *parent, Core::ProxyEntry entry, QString status, Fn<void()> actions);
@@ -175,6 +190,8 @@ private:
 	object_ptr<Ui::FlatLabel> _family;
 	object_ptr<Ui::LinkButton> _file;
 	object_ptr<Ui::LinkButton> _clipboard;
+	object_ptr<Ui::LinkButton> _dismiss;
+	object_ptr<Ui::AbstractButton> _drop;
 	object_ptr<Ui::LinkButton> _cancel;
 	object_ptr<Ui::LinkButton> _submit;
 	object_ptr<Ui::ScrollArea> _scroll;
@@ -207,6 +224,7 @@ private:
 	object_ptr<Ui::FlatLabel> _title;
 	object_ptr<Ui::InputField> _search;
 	object_ptr<Ui::FlatLabel> _summary;
+	object_ptr<Ui::RpWidget> _header;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Ui::RpWidget> _rows;
 	object_ptr<ProxyImport> _import = { nullptr };
@@ -247,27 +265,29 @@ void ProxyRow::paintEvent(QPaintEvent *event) {
 	p.fillRect(event->rect(), st::windowBg);
 	const auto pad = st::proxyManagementPadding;
 	const auto wide = width() >= st::proxyManagementWideTable;
-	const auto column = st::proxyManagementColumnWidth;
-	const auto leftWidth = std::max(0, width() - 3 * pad - (wide ? 4 * column : 0));
-	p.setFont(st::normalFont);
-	p.setPen(st::windowFg);
-	p.drawText(pad, pad, st::normalFont->elided(
-		_entry.notes.isEmpty() ? Endpoint(_entry.proxy) : _entry.notes, leftWidth));
-	p.setPen(st::windowSubTextFg);
-	p.drawText(pad, pad + st::normalFont->height, st::normalFont->elided(
-		(_entry.notes.isEmpty() ? TypeText(_entry.proxy) : Endpoint(_entry.proxy))
-		+ u" · "_q + _status, leftWidth));
-	p.drawText(pad, pad + 2 * st::normalFont->height, st::normalFont->elided(
-		tr::lng_proxy_management_bindings(tr::now, lt_amount, QString::number(_bindings))
-		+ u" · "_q + tr::lng_proxy_management_hidden(tr::now), leftWidth));
 	if (wide) {
-		const auto values = QStringList{ TypeText(_entry.proxy),
-			tr::lng_proxy_management_unknown(tr::now), _entry.proxy.user,
-			QString::number(_bindings) };
-		for (auto i = 0; i != values.size(); ++i) {
-			p.drawText(width() - 2 * pad - (4 - i) * column, height() / 2,
-				st::normalFont->elided(values[i], column - st::proxyManagementGap));
-		}
+		PaintColumns(p, width(), pad, {
+			_entry.notes.isEmpty() ? Endpoint(_entry.proxy) : _entry.notes,
+			TypeText(_entry.proxy), tr::lng_proxy_management_unknown(tr::now),
+			_entry.proxy.host, QString::number(_entry.proxy.port),
+			_entry.proxy.user, QString::number(_bindings), QString(),
+		});
+		p.setPen(st::windowSubTextFg);
+		p.drawText(pad, pad + st::normalFont->height,
+			st::normalFont->elided(_status, (width() - 2 * pad) * 24 / 100));
+	} else {
+		const auto leftWidth = std::max(0, width() - 4 * pad);
+		p.setFont(st::normalFont);
+		p.setPen(st::windowFg);
+		p.drawText(pad, pad, st::normalFont->elided(
+			_entry.notes.isEmpty() ? Endpoint(_entry.proxy) : _entry.notes, leftWidth));
+		p.setPen(st::windowSubTextFg);
+		p.drawText(pad, pad + st::normalFont->height, st::normalFont->elided(
+			(_entry.notes.isEmpty() ? TypeText(_entry.proxy) : Endpoint(_entry.proxy))
+			+ u" · "_q + _status, leftWidth));
+		p.drawText(pad, pad + 2 * st::normalFont->height, st::normalFont->elided(
+			tr::lng_proxy_management_bindings(tr::now, lt_amount, QString::number(_bindings))
+			+ u" · "_q + tr::lng_proxy_management_hidden(tr::now), leftWidth));
 	}
 	p.fillRect(0, height() - st::lineWidth, width(), st::lineWidth, st::shadowFg);
 }
@@ -282,16 +302,32 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 , _family(this, tr::lng_proxy_management_family_hint(), st::defaultFlatLabel)
 , _file(this, tr::lng_proxy_management_choose_file(tr::now))
 , _clipboard(this, tr::lng_proxy_management_clipboard(tr::now))
+, _dismiss(this, u"×"_q)
+, _drop(this)
 , _cancel(this, tr::lng_cancel(tr::now))
 , _submit(this, tr::lng_proxy_management_import_confirm(tr::now))
 , _scroll(this, st::defaultScrollArea) {
 	setFocusPolicy(Qt::StrongFocus);
 	setAcceptDrops(true);
 	_body = _scroll->setOwnedWidget(object_ptr<Ui::RpWidget>(this));
-	for (const auto child : std::vector<QWidget*>{ _hint, _ipv6, _family, _file, _clipboard }) {
+	for (const auto child : std::vector<QWidget*>{ _hint, _ipv6, _family, _drop, _file, _clipboard }) {
 		child->setParent(_body);
 		child->show();
 	}
+	_dismiss->setAccessibleName(tr::lng_close(tr::now));
+	_dismiss->setClickedCallback(_close);
+	_drop->setPointerCursor(true);
+	_drop->setClickedCallback([=] { chooseFile(); });
+	_drop->setAccessibleName(tr::lng_proxy_management_choose_file(tr::now));
+	_drop->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(_drop);
+		p.fillRect(_drop->rect(), st::boxBg);
+		auto pen = st::windowSubTextFg->p;
+		pen.setStyle(Qt::DashLine);
+		p.setPen(pen);
+		p.drawRect(_drop->rect().adjusted(0, 0, -1, -1));
+	}, _drop->lifetime());
+	_drop->lower();
 	_file->setClickedCallback([=] { chooseFile(); });
 	_clipboard->setClickedCallback([=] { clipboard(); });
 	_cancel->setClickedCallback(_close);
@@ -376,8 +412,9 @@ void ProxyImport::layout() {
 	const auto pad = st::proxyManagementPadding;
 	const auto left = std::max(0, width() - st::proxyManagementDrawerWidth) + pad;
 	const auto inner = std::max(1, width() - left - pad);
-	_title->resizeToWidth(inner);
+	_title->resizeToWidth(std::max(1, inner - _dismiss->width() - pad));
 	_title->move(left, pad);
+	_dismiss->move(width() - pad - _dismiss->width(), pad);
 	const auto top = 2 * pad + _title->height();
 	const auto bottom = height() - pad - _submit->height();
 	_cancel->move(left, bottom);
@@ -387,10 +424,12 @@ void ProxyImport::layout() {
 	_hint->resizeToWidth(inner);
 	_hint->move(0, y);
 	y += _hint->height() + pad;
-	_file->move(0, y);
-	y += _file->height() + pad;
-	_clipboard->move(0, y);
-	y += _clipboard->height() + pad;
+	const auto dropHeight = 3 * pad + _file->height() + _clipboard->height();
+	_drop->setGeometry(0, y, inner, dropHeight);
+	_file->move(std::max(0, (inner - _file->width()) / 2), y + pad);
+	_clipboard->move(std::max(0, (inner - _clipboard->width()) / 2),
+		y + 2 * pad + _file->height());
+	y += dropHeight + pad;
 	_ipv6->resizeToWidth(inner);
 	_ipv6->move(0, y);
 	y += _ipv6->height() + st::proxyManagementGap;
@@ -451,6 +490,7 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 , _title(this, tr::lng_proxy_management_title(), st::defaultFlatLabel)
 , _search(this, st::defaultInputField, tr::lng_proxy_management_search())
 , _summary(this, QString(), st::defaultFlatLabel)
+, _header(this)
 , _scroll(this, st::defaultScrollArea)
 , _checks([=](const Core::ProxyEntry &entry, Fn<void(int)> done) {
 	return RunCheck(&_controller->account(), entry, std::move(done));
@@ -459,6 +499,18 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 		auto p = QPainter(this);
 		p.fillRect(clip, st::windowBg);
 	}, lifetime());
+	_header->paintRequest() | rpl::on_next([=] {
+		auto p = Painter(_header);
+		p.fillRect(_header->rect(), st::boxBg);
+		PaintColumns(p, _header->width(), st::proxyManagementPadding, {
+			tr::lng_proxy_management_column_notes(tr::now),
+			tr::lng_proxy_management_column_type(tr::now),
+			tr::lng_proxy_management_column_country(tr::now), u"IP"_q,
+			tr::lng_proxy_box_port(tr::now), tr::lng_proxy_box_username(tr::now),
+			tr::lng_proxy_management_column_accounts(tr::now),
+			tr::lng_proxy_management_column_actions(tr::now),
+		});
+	}, _header->lifetime());
 	_tools.push_back(button(tr::lng_proxy_management_add(tr::now), [=] {
 		auto initial = MTP::ProxyData();
 		initial.type = MTP::ProxyData::Type::Socks5;
@@ -612,6 +664,12 @@ void ProxyManagement::layout() {
 	_summary->resizeToWidth(inner);
 	_summary->move(pad, y);
 	y += _summary->height() + pad;
+	const auto wide = inner >= st::proxyManagementWideTable;
+	_header->setVisible(wide);
+	if (wide) {
+		_header->setGeometry(pad, y, inner, st::proxyManagementControlHeight);
+		y += st::proxyManagementControlHeight;
+	}
 	const auto bottom = height() - pad - st::proxyManagementControlHeight;
 	_scroll->setGeometry(pad, y, inner, std::max(0, bottom - y));
 	if (_rows) {
@@ -774,8 +832,6 @@ void ProxyManagement::openImport(bool clipboard) {
 	_import->setFocus();
 	if (clipboard) {
 		_import->clipboard();
-	} else {
-		_import->chooseFile();
 	}
 }
 

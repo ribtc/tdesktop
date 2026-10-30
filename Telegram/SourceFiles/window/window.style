@@ -226,6 +226,42 @@ createThemeLink: InputField(defaultInputField) {
 	heightMin: 34px;
 }
 
+windowAccountsWidth: 64px;
+windowAccountsHeader: 40px;
+windowAccountsTitleTop: 15px;
+windowAccountsRow: 76px;
+windowAccountsUserpic: 40px;
+windowAccountsPhotoTop: 4px;
+windowAccountsRingGap: 4px;
+windowAccountsRingWidth: 2px;
+windowAccountsBadgeSkip: 6px;
+windowAccountsStatusSize: 9px;
+windowAccountsNameFont: font(11px);
+windowAccountsTitle: FlatLabel(defaultFlatLabel) {
+	textFg: sideBarTextFg;
+	align: align(center);
+	style: TextStyle(defaultTextStyle) {
+		font: windowAccountsNameFont;
+	}
+}
+windowAccountsAllTextTop: 38px;
+windowAccountsCountTop: 54px;
+windowAccountsCount: FlatLabel(windowAccountsTitle) {
+	textFg: windowBgActive;
+}
+windowAccountsAll: IconButton {
+	width: windowAccountsWidth;
+	height: 76px;
+	icon: icon {{ "menu/groups", sideBarIconFg }};
+	iconPosition: point(-1px, 6px);
+	ripple: defaultRippleAnimation;
+}
+windowAccountsAdd: IconButton(windowAccountsAll) {
+	height: 52px;
+	iconPosition: point(-1px, -1px);
+	icon: icon {{ "menu/add", sideBarIconFg }};
+}
+
 windowFiltersWidth: 72px;
 windowFiltersButton: SideBarButton(defaultSideBarButton) {
 	textTop: 40px;

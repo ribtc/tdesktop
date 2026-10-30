@@ -9357,5 +9357,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_account_proxy_numeric" = "Only numeric IPv4 or IPv6 proxy addresses are supported. Host names are not resolved.";
 "lng_account_proxy_changed" = "This proxy changed while the editor was open. Reopen it and try again.";
 
+"lng_accounts_rail_title" = "Accounts";
+"lng_accounts_all" = "All accounts";
+"lng_accounts_all_short" = "All";
+
 "lng_account_http_blocked" = "Download blocked. Verify this account's proxy or bind an available proxy, then try again.";
 "lng_account_http_unsupported" = "This download uses an external HTTP service and requires a SOCKS5 proxy. Telegram files remain available through MTProto.";

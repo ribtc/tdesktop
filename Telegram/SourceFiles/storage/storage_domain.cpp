@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/version.h"
 #include "storage/details/storage_file_utilities.h"
 #include "storage/serialize_common.h"
+#include "storage/storage_account_index.h"
 #include "mtproto/mtproto_config.h"
 #include "main/main_domain.h"
 #include "main/main_account.h"
@@ -624,44 +625,34 @@ Domain::StartModernResult Domain::startModern(
 		return StartModernResult::Failed;
 	}
 	LOG(("App Info: reading encrypted info..."));
-	auto count = qint32();
-	info.stream >> count;
-	if (count <= 0 || count > Main::Domain::kPremiumMaxAccounts) {
-		LOG(("App Error: bad accounts count: %1").arg(count));
+	const auto accountIndex = ReadAccountIndex(info.stream);
+	if (!accountIndex) {
+		LOG(("App Error: bad accounts index."));
 		return StartModernResult::Failed;
 	}
 
 	_oldVersion = file.version;
 
-	auto tried = base::flat_set<int>();
 	auto sessions = base::flat_set<uint64>();
-	auto active = 0;
+	const auto count = int(accountIndex->indices.size());
 	for (auto i = 0; i != count; ++i) {
-		auto index = qint32();
-		info.stream >> index;
-		if (index >= 0
-			&& index < Main::Domain::kPremiumMaxAccounts
-			&& tried.emplace(index).second) {
-			auto account = std::make_unique<Main::Account>(
-				_owner,
-				_dataName,
-				index);
-			auto config = account->prepareToStart(_localKey);
-			const auto sessionId = account->willHaveSessionUniqueId(
-				config.get());
-			if ((sessionId != 0 && !sessions.contains(sessionId))
-				|| (sessionId == 0 && (account->pendingLogin()
-					|| (sessions.empty() && i + 1 == count)))) {
-				if (sessions.empty()) {
-					active = index;
-				}
-				account->start(std::move(config));
-				_owner->accountAddedInStorage({
-					.index = index,
-					.account = std::move(account)
-				});
-				sessions.emplace(sessionId);
-			}
+		const auto index = accountIndex->indices[i];
+		auto account = std::make_unique<Main::Account>(
+			_owner,
+			_dataName,
+			index);
+		auto config = account->prepareToStart(_localKey);
+		const auto sessionId = account->willHaveSessionUniqueId(
+			config.get());
+		if ((sessionId != 0 && !sessions.contains(sessionId))
+			|| (sessionId == 0 && (account->pendingLogin()
+				|| (sessions.empty() && i + 1 == count)))) {
+			account->start(std::move(config));
+			_owner->accountAddedInStorage({
+				.index = index,
+				.account = std::move(account)
+			});
+			sessions.emplace(sessionId);
 		}
 	}
 	if (sessions.empty()) {
@@ -669,10 +660,7 @@ Domain::StartModernResult Domain::startModern(
 		return StartModernResult::Failed;
 	}
 
-	if (!info.stream.atEnd()) {
-		info.stream >> active;
-	}
-	_owner->activateFromStorage(active);
+	_owner->activateFromStorage(accountIndex->active);
 
 	Ensures(!sessions.empty());
 	return StartModernResult::Success;
@@ -695,11 +683,13 @@ QByteArray Domain::prepareAccountsInfo() const {
 	auto keySize = sizeof(qint32) + sizeof(qint32) * list.size();
 
 	EncryptedDescriptor info(keySize);
-	info.stream << qint32(list.size());
+	auto accountIndex = AccountIndex{ .active = _owner->activeForStorage() };
+	accountIndex.indices.reserve(list.size());
 	for (const auto &[index, account] : list) {
-		info.stream << qint32(index);
+		accountIndex.indices.push_back(index);
 	}
-	info.stream << qint32(_owner->activeForStorage());
+	const auto written = WriteAccountIndex(info.stream, accountIndex);
+	Expects(written);
 	return PrepareEncrypted(info, _localKey);
 }
 

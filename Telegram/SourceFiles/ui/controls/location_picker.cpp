@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/location_picker.h"
 
+#include "core/account_network_restrictions.h"
+#include "main/main_account.h"
+
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
 #include "boxes/peer_list_box.h"
@@ -887,6 +890,10 @@ void LocationPicker::setupWindow(const Descriptor &descriptor) {
 }
 
 void LocationPicker::setupWebview() {
+	if (!Core::AccountWebViewError().isEmpty()) {
+		showWebviewError();
+		return;
+	}
 	Expects(!_webview);
 
 	delete base::take(_mapPlaceholder);
@@ -1078,7 +1085,9 @@ void LocationPicker::showWebviewError() {
 	const auto wrap = CreateChild<RpWidget>(_container);
 
 	const auto available = Webview::Availability();
-	auto text = (available.error != Webview::Available::Error::None)
+	auto text = !Core::AccountWebViewError().isEmpty()
+		? TextWithEntities{ Core::AccountWebViewError() }
+		: (available.error != Webview::Available::Error::None)
 		? BotWebView::ErrorText(available)
 		: TextWithEntities{ u"Error: Could not initialize WebView."_q };
 
@@ -1139,6 +1148,7 @@ void LocationPicker::resolveAddress(Core::GeoLocation location) {
 		: baseLangId;
 	const auto nonEmptyId = langId.isEmpty() ? u"en"_q : langId;
 	Core::ResolveLocationAddress(
+		_session->account().network(),
 		location,
 		langId,
 		_config.geoToken,

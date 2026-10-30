@@ -7,25 +7,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/current_geo_location.h"
 
-#include "base/platform/base_platform_info.h"
-#include "base/invoke_queued.h"
-#include "base/timer.h"
-#include "data/raw/raw_countries_bounds.h"
-#include "platform/platform_current_geo_location.h"
-#include "ui/ui_utility.h"
+#include "core/account_network_restrictions.h"
+#include "mtproto/http_transport.h"
+#include "ui/toast/toast.h"
 
-#include <QtNetwork/QNetworkAccessManager>
+#include "base/platform/base_platform_info.h"
+#include "data/raw/raw_countries_bounds.h"
+
 #include <QtNetwork/QNetworkReply>
 #include <QtCore/QCoreApplication>
-#include <QtCore/QPointer>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 
 namespace Core {
 namespace {
-
-constexpr auto kDestroyManagerTimeout = 20 * crl::time(1000);
 
 [[nodiscard]] QString ChooseLanguage(const QString &language) {
 	// https://docs.mapbox.com/api/search/geocoding#language-coverage
@@ -63,6 +59,7 @@ constexpr auto kDestroyManagerTimeout = 20 * crl::time(1000);
 }
 
 void ResolveLocationAddressGeneric(
+		MTP::NetworkContext &network,
 		const GeoLocation &location,
 		const QString &language,
 		const QString &token,
@@ -72,64 +69,35 @@ void ResolveLocationAddressGeneric(
 		.arg(location.point.y())
 		.arg(location.point.x())
 		.arg(ChooseLanguage(language));
-	static auto Cache = base::flat_map<QString, GeoAddress>();
-	const auto i = Cache.find(partialUrl);
-	if (i != end(Cache)) {
-		callback(i->second);
-		return;
-	}
-	const auto finishWith = [=](GeoAddress result) {
-		Cache[partialUrl] = result;
-		callback(result);
-	};
-
 	struct State final : QObject {
-		explicit State(QObject *parent)
-		: QObject(parent)
-		, manager(this)
-		, destroyer([=] { if (sent.empty()) delete this; }) {
+		explicit State(MTP::NetworkContext &network)
+		: QObject(qApp)
+		, manager(network) {
 		}
 
-		QNetworkAccessManager manager;
-		std::vector<QPointer<QNetworkReply>> sent;
-		base::Timer destroyer;
+		MTP::HttpTransport manager;
 	};
-
-	static auto state = QPointer<State>();
-	if (!state) {
-		state = Ui::CreateChild<State>(qApp);
-	}
-	const auto destroyReplyDelayed = [](QNetworkReply *reply) {
-		InvokeQueued(reply, [=] {
-			for (auto i = begin(state->sent); i != end(state->sent);) {
-				if (!*i || *i == reply) {
-					i = state->sent.erase(i);
-				} else {
-					++i;
-				}
-			}
-			delete reply;
-			if (state->sent.empty()) {
-				state->destroyer.callOnce(kDestroyManagerTimeout);
-			}
-		});
-	};
-
+	const auto state = new State(network);
+	const auto route = network.snapshot();
 	auto request = QNetworkRequest(partialUrl.arg(token));
+	request.setTransferTimeout(15000);
 	request.setRawHeader("Referer", "http://desktop-app-resource/");
 
 	const auto reply = state->manager.get(request);
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
-		destroyReplyDelayed(reply);
-
+		state->deleteLater();
+		if (!route.current() || reply->error() != QNetworkReply::NoError) {
+			callback({});
+			return;
+		}
 		const auto json = QJsonDocument::fromJson(reply->readAll());
 		if (!json.isObject()) {
-			finishWith({});
+			callback({});
 			return;
 		}
 		const auto features = json["features"].toArray();
 		if (features.isEmpty()) {
-			finishWith({});
+			callback({});
 			return;
 		}
 		const auto feature = features.at(0).toObject();
@@ -151,12 +119,7 @@ void ResolveLocationAddressGeneric(
 		add({ /*u"address"_q, u"street"_q, */u"neighborhood"_q });
 		add({ u"place"_q, u"region"_q });
 		add({ u"country"_q });
-		finishWith({ .name = names.join(", ") });
-	});
-	QObject::connect(reply, &QNetworkReply::errorOccurred, [=] {
-		destroyReplyDelayed(reply);
-
-		finishWith({});
+		callback({ .name = names.join(", ") });
 	});
 }
 
@@ -187,32 +150,26 @@ GeoLocation ResolveCurrentCountryLocation() {
 }
 
 void ResolveCurrentGeoLocation(Fn<void(GeoLocation)> callback) {
-	using namespace Platform;
-	return ResolveCurrentExactLocation([done = std::move(callback)](
-			GeoLocation result) {
-		done(result.accuracy != GeoLocationAccuracy::Failed
-			? result
-			: ResolveCurrentCountryLocation());
-	});
+	Ui::Toast::Show(AccountSystemNetworkError());
+	callback(ResolveCurrentCountryLocation());
 }
 
 void ResolveLocationAddress(
+		MTP::NetworkContext &network,
 		const GeoLocation &location,
 		const QString &language,
 		const QString &token,
 		Fn<void(GeoAddress)> callback) {
-	auto done = [=, done = std::move(callback)](GeoAddress result) mutable {
-		if (!result && !token.isEmpty()) {
-			ResolveLocationAddressGeneric(
-				location,
-				language,
-				token,
-				std::move(done));
-		} else {
-			done(result);
-		}
-	};
-	Platform::ResolveLocationAddress(location, language, std::move(done));
+	if (token.isEmpty() || !network.snapshot().httpProxy()) {
+		callback({});
+		return;
+	}
+	ResolveLocationAddressGeneric(
+		network,
+		location,
+		language,
+		token,
+		std::move(callback));
 }
 
 bool AreTheSame(const GeoLocation &a, const GeoLocation &b) {

@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #pragma once
 
+#include "mtproto/network_context.h"
+
 #include <QtCore/QByteArray>
 #include <QtNetwork/QSslSocket>
 
@@ -18,6 +20,7 @@ namespace Core {
 class WebSocketClient final : public QObject {
 public:
 	explicit WebSocketClient(QObject *parent = nullptr);
+	WebSocketClient(MTP::NetworkContext &network, QObject *parent = nullptr);
 	~WebSocketClient();
 
 	void connectTo(
@@ -52,6 +55,7 @@ private:
 		Closed,
 	};
 
+	MTP::NetworkSnapshot _route;
 	QSslSocket _socket;
 	QString _host;
 	QString _target;
@@ -61,6 +65,7 @@ private:
 	State _state = State::Idle;
 	int _port = 0;
 	bool _failed = false;
+	rpl::lifetime _lifetime;
 
 };
 

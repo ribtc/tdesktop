@@ -1974,15 +1974,7 @@ void Application::postponeCall(FnMut<void()> &&callable) {
 }
 
 void Application::refreshGlobalProxy() {
-	const auto &proxySettings = settings().proxy();
-	const auto proxy = proxySettings.isEnabled()
-		? proxySettings.selected()
-		: MTP::ProxyData();
-	if (proxy.type == MTP::ProxyData::Type::Web && proxy.valid()) {
-		MTP::WebProxy::Transport::Activate(proxy);
-	} else {
-		MTP::WebProxy::Transport::Deactivate();
-	}
+	MTP::WebProxy::Transport::Deactivate();
 	Sandbox::Instance().refreshGlobalProxy();
 }
 

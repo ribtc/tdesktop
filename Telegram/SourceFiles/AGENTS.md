@@ -353,6 +353,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 ### calls — calls service and one-to-one calls
 - Paths: `SourceFiles/calls/`, `SourceFiles/calls/group/ui/desktop_capture_choose_source*`, `SourceFiles/ui/controls/call_button*`, `SourceFiles/ui/controls/call_mute_button*`, `SourceFiles/ui/boxes/rate_call_box*`
 - `Calls::Instance` that starts and tracks every call, the tgcalls 1:1 call model and key fingerprint, the call window and panel, the active-call top bar, recent calls, device menus, the screen-source picker and call rating. It must not own group calls.
+- `calls_network.*` owns account media eligibility. RTC engines stay blocked until their proxy-only transport is verified; MTP broadcast media uses the account snapshot. Call models revoke their media when that snapshot expires.
 
 ### calls/group — group calls and live streams
 - Paths: `SourceFiles/calls/group/`, `SourceFiles/media/view/media_view_video_stream*`

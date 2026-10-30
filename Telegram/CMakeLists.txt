@@ -488,6 +488,8 @@ PRIVATE
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
     calls/calls_instance.h
+    calls/calls_network.cpp
+    calls/calls_network.h
     calls/calls_panel.cpp
     calls/calls_panel.h
     calls/calls_panel_background.cpp

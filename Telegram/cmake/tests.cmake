@@ -127,3 +127,23 @@ target_link_libraries(test_network_context PRIVATE
     desktop-app::lib_crl
     desktop-app::external_qt
 )
+
+add_executable(test_calls_network)
+init_target(test_calls_network "(tests)")
+target_include_directories(test_calls_network PRIVATE ${src_loc})
+nice_target_sources(test_calls_network ${src_loc}
+PRIVATE
+    calls/calls_network.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_calls_network.cpp
+)
+target_precompile_headers(test_calls_network PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_calls_network PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)

@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/group/calls_group_call.h"
 #include "calls/group/calls_group_panel.h"
 #include "calls/calls_call.h"
+#include "calls/calls_network.h"
 #include "calls/calls_panel.h"
 #include "data/data_user.h"
 #include "data/data_group_call.h"
@@ -203,6 +204,11 @@ Instance::~Instance() {
 void Instance::startOutgoingCall(
 		not_null<UserData*> user,
 		StartOutgoingCallArgs args) {
+	if (!CheckMediaAllowed(
+			user->session().account().network().snapshot(),
+			MediaTransport::Rtc)) {
+		return;
+	}
 	if (activateCurrentCall()
 		|| (!args.isConfirmed && activateUnconfirmedCall(user))) {
 		return;
@@ -217,6 +223,11 @@ void Instance::startOutgoingCall(
 		return;
 	}
 	requestPermissionsOrFail(crl::guard(this, [=] {
+		if (!CheckMediaAllowed(
+				user->session().account().network().snapshot(),
+				MediaTransport::Rtc)) {
+			return;
+		}
 		if (activateCurrentCall()
 			|| (!args.isConfirmed && activateUnconfirmedCall(user))) {
 			return;
@@ -229,6 +240,11 @@ void Instance::startOrJoinGroupCall(
 		std::shared_ptr<Ui::Show> show,
 		not_null<PeerData*> peer,
 		StartGroupCallArgs args) {
+	if (!CheckMediaAllowed(
+			peer->session().account().network().snapshot(),
+			MediaTransport::MtpBroadcast)) {
+		return;
+	}
 	confirmLeaveCurrent(show, peer, args, [=](StartGroupCallArgs args) {
 		using JoinConfirm = Calls::StartGroupCallArgs::JoinConfirm;
 		const auto context = (args.confirm == JoinConfirm::Always)
@@ -254,6 +270,14 @@ void Instance::startOrJoinGroupCall(
 void Instance::startOrJoinConferenceCall(StartConferenceInfo args) {
 	Expects(args.call || args.show);
 
+	const auto session = args.show
+		? &args.show->session()
+		: &args.call->session();
+	if (!CheckMediaAllowed(
+			session->account().network().snapshot(),
+			MediaTransport::Rtc)) {
+		return;
+	}
 	const auto migrationInfo = (args.migrating
 		&& args.call
 		&& _currentCallPanel)
@@ -263,9 +287,6 @@ void Instance::startOrJoinConferenceCall(StartConferenceInfo args) {
 		destroyCurrentCall();
 	}
 
-	const auto session = args.show
-		? &args.show->session()
-		: &args.call->session();
 	auto call = std::make_unique<GroupCall>(_delegate.get(), args);
 	const auto raw = call.get();
 
@@ -435,6 +456,11 @@ void Instance::createCall(
 			bool video,
 			bool isConfirmed,
 			const Performer &repeater) {
+		if (type == Call::Type::Outgoing && !CheckMediaAllowed(
+				user->session().account().network().snapshot(),
+				MediaTransport::Rtc)) {
+			return;
+		}
 		const auto delegate = _delegate.get();
 		auto call = std::make_unique<Call>(delegate, user, type, video);
 		if (isConfirmed) {
@@ -494,6 +520,11 @@ void Instance::destroyGroupCall(not_null<GroupCall*> call) {
 void Instance::createGroupCall(
 		Group::JoinInfo info,
 		const MTPInputGroupCall &inputCall) {
+	if (!CheckMediaAllowed(
+			info.peer->session().account().network().snapshot(),
+			MediaTransport::MtpBroadcast)) {
+		return;
+	}
 	destroyCurrentCall();
 
 	auto call = std::make_unique<GroupCall>(

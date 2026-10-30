@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/config_loader.h"
 
+#include "mtproto/network_context.h"
+
 #include "base/random.h"
 #include "mtproto/special_config_request.h"
 #include "mtproto/facade.h"
@@ -116,7 +118,9 @@ void ConfigLoader::enumerate() {
 }
 
 void ConfigLoader::refreshSpecialLoader() {
-	if (_proxyEnabled || _instance->isKeysDestroyer()) {
+	if (_proxyEnabled
+		|| _instance->isKeysDestroyer()
+		|| _instance->network().snapshot().state != NetworkState::Legacy) {
 		_specialLoader.reset();
 		return;
 	}
@@ -136,6 +140,10 @@ void ConfigLoader::setPhone(const QString &phone) {
 }
 
 void ConfigLoader::createSpecialLoader() {
+	if (_instance->network().snapshot().state != NetworkState::Legacy) {
+		_specialLoader.reset();
+		return;
+	}
 	const auto testMode = _instance->isTestMode();
 	_triedSpecialEndpoints.clear();
 	_specialLoader = std::make_unique<SpecialConfigRequest>([=](

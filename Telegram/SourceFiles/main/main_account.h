@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtp_instance.h"
+#include "mtproto/proxy_check.h"
+#include "base/timer.h"
 #include "base/weak_ptr.h"
 
 namespace Storage {
@@ -81,6 +83,12 @@ public:
 	[[nodiscard]] rpl::producer<Session*> sessionChanges() const;
 
 	[[nodiscard]] MTP::NetworkContext &network() const;
+	[[nodiscard]] QString proxyBindingId() const;
+	[[nodiscard]] bool pendingLogin() const;
+	bool bindProxy(const QString &id);
+	void unbindProxy();
+	void cancelPendingLogin();
+	void retryProxy();
 
 	[[nodiscard]] MTP::Instance &mtp() const {
 		return *_mtp;
@@ -135,6 +143,8 @@ private:
 		int streamVersion,
 		std::unique_ptr<SessionSettings> settings);
 	void watchProxyChanges();
+	void cancelProxyCheck();
+	void startProxyCheck();
 	void watchSessionChanges();
 	bool checkForUpdates(const MTP::Response &message);
 	bool checkForNewSession(const MTP::Response &message);
@@ -149,6 +159,9 @@ private:
 	const std::unique_ptr<Storage::Account> _local;
 
 	const std::shared_ptr<MTP::NetworkContext> _network;
+	MTP::ProxyCheckConnection _proxyCheckV4;
+	MTP::ProxyCheckConnection _proxyCheckV6;
+	base::Timer _proxyCheckTimer;
 	std::unique_ptr<MTP::Instance> _mtp;
 	rpl::variable<MTP::Instance*> _mtpValue;
 	std::unique_ptr<MTP::Instance> _mtpForKeysDestroy;

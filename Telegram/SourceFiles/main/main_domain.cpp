@@ -518,7 +518,8 @@ void Domain::removeRedundantAccounts() {
 	const auto was = _accounts.size();
 	for (auto i = _accounts.begin(); i != _accounts.end();) {
 		if (Core::App().separateWindowFor(not_null(i->account.get()))
-			|| i->account->sessionExists()) {
+			|| i->account->sessionExists()
+			|| i->account->pendingLogin()) {
 			++i;
 			continue;
 		}

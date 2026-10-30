@@ -566,7 +566,9 @@ void Instance::Private::badConfigurationError(const ProxyData &proxy) {
 }
 
 void Instance::Private::syncHttpUnixtime() {
-	if (base::unixtime::http_valid() || _httpUnixtimeLoader) {
+	if (_instance->network().snapshot().state != NetworkState::Legacy
+		|| base::unixtime::http_valid()
+		|| _httpUnixtimeLoader) {
 		return;
 	}
 	_httpUnixtimeLoader = std::make_unique<SpecialConfigRequest>([=] {

@@ -649,8 +649,9 @@ Domain::StartModernResult Domain::startModern(
 			auto config = account->prepareToStart(_localKey);
 			const auto sessionId = account->willHaveSessionUniqueId(
 				config.get());
-			if (!sessions.contains(sessionId)
-				&& (sessionId != 0 || (sessions.empty() && i + 1 == count))) {
+			if ((sessionId != 0 && !sessions.contains(sessionId))
+				|| (sessionId == 0 && (account->pendingLogin()
+					|| (sessions.empty() && i + 1 == count)))) {
 				if (sessions.empty()) {
 					active = index;
 				}

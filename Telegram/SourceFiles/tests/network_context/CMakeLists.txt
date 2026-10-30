@@ -12,6 +12,7 @@ set(TELEGRAM_TOOLKIT_ROOT "${checkout}" CACHE PATH "Checkout with toolkit submod
 add_executable(test_network_context
     ../test_network_context.cpp
     assertion_log.cpp
+    ../../core/proxy_library.cpp
     ../../mtproto/network_context.cpp
     ../../mtproto/mtproto_proxy_data.cpp
 )

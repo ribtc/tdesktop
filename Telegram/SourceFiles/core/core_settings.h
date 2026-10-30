@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "core/core_settings_proxy.h"
+#include "core/proxy_library.h"
 #include "media/media_common.h"
 #include "dialogs/ui/dialogs_quick_action.h"
 #include "ui/widgets/chat_filters_tabs_mode.h"
@@ -1054,6 +1055,8 @@ public:
 			std::forward<Other>(fallback));
 	}
 
+	[[nodiscard]] ProxyLibrary &proxyLibrary();
+
 	void resetOnLastLogout();
 
 private:
@@ -1079,6 +1082,8 @@ private:
 	};
 
 	SettingsProxy _proxy;
+	std::unique_ptr<ProxyLibrary> _proxyLibrary;
+	rpl::lifetime _proxyLibraryLifetime;
 
 	rpl::variable<bool> _adaptiveForWide = true;
 	bool _moderateModeEnabled = false;

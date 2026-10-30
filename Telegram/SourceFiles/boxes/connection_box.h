@@ -149,3 +149,11 @@ private:
 	rpl::lifetime _lifetime;
 
 };
+
+[[nodiscard]] QString AccountProxyStatus(not_null<Main::Account*> account);
+
+[[nodiscard]] object_ptr<Ui::BoxContent> CreateAccountProxyBox(
+	not_null<Main::Account*> account);
+[[nodiscard]] object_ptr<Ui::BoxContent> CreateAccountProxyEditBox(
+	const MTP::ProxyData &proxy,
+	Fn<void(MTP::ProxyData)> save);

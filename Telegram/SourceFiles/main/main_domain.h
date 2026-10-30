@@ -101,6 +101,7 @@ public:
 
 	// Drops session-less accounts that have no window open for them.
 	void removeRedundantAccounts();
+	void scheduleWriteAccounts();
 
 	// Interface for Storage::Domain.
 	void accountAddedInStorage(AccountWithIndex accountWithIndex);
@@ -135,7 +136,6 @@ private:
 	[[nodiscard]] bool finishPasscodeClearAfterReset();
 
 	void watchSession(not_null<Account*> account);
-	void scheduleWriteAccounts();
 	void checkForLastProductionConfig(not_null<Main::Account*> account);
 	void updateUnreadBadge();
 	void scheduleUpdateUnreadBadge();

@@ -8,10 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/session.h"
 
 #include "mtproto/details/mtproto_dcenter.h"
+#include "mtproto/mtp_instance.h"
 #include "mtproto/session_private.h"
 #include "mtproto/mtproto_auth_key.h"
-#include "core/application.h"
-#include "core/core_settings.h"
 #include "base/unixtime.h"
 
 namespace MTP {
@@ -21,7 +20,7 @@ SessionOptions::SessionOptions(
 	const QString &systemLangCode,
 	const QString &cloudLangCode,
 	const QString &langPackName,
-	const ProxyData &proxy,
+	NetworkSnapshot network,
 	bool useIPv4,
 	bool useIPv6,
 	bool useHttp,
@@ -29,7 +28,8 @@ SessionOptions::SessionOptions(
 : systemLangCode(systemLangCode)
 , cloudLangCode(cloudLangCode)
 , langPackName(langPackName)
-, proxy(proxy)
+, network(std::move(network))
+, proxy(this->network.proxy)
 , useIPv4(useIPv4)
 , useIPv6(useIPv6)
 , useHttp(useHttp)
@@ -50,17 +50,9 @@ void SessionData::withSession(Callback &&callback) {
 }
 
 void SessionData::notifyConnectionInited(const SessionOptions &options) {
-	// #TODO race
-	const auto current = this->options();
-	if (current.cloudLangCode == _options.cloudLangCode
-		&& current.systemLangCode == _options.systemLangCode
-		&& current.langPackName == _options.langPackName
-		&& current.proxy == _options.proxy) {
-		QMutexLocker lock(&_ownerMutex);
-		if (_owner) {
-			_owner->notifyDcConnectionInited();
-		}
-	}
+	withSession([options](not_null<Session*> session) {
+		session->notifyDcConnectionInited(options);
+	});
 }
 
 void SessionData::queueTryToReceive() {
@@ -216,11 +208,15 @@ void Session::watchDcOptionsChanges() {
 
 void Session::start() {
 	killConnection();
+	if (!_instance->network().snapshot().allowed()) {
+		return;
+	}
 	_private = new SessionPrivate(
 		_instance,
 		_thread.get(),
 		_data,
 		_shiftedDcId);
+	_instance->registerSessionWorker(_private);
 }
 
 void Session::restart() {
@@ -233,24 +229,24 @@ void Session::restart() {
 		InvokeQueued(captured, [=] {
 			captured->restartNow();
 		});
+	} else {
+		start();
 	}
 }
 
 void Session::refreshOptions() {
-	const auto &settings = Core::App().settings().proxy();
-	const auto &proxy = settings.selected();
-	const auto isEnabled = settings.isEnabled();
-	const auto proxyType = (isEnabled ? proxy.type : ProxyData::Type::None);
+	const auto network = _instance->network().snapshot();
+	const auto proxyType = network.proxy.type;
 	const auto useTcp = (proxyType != ProxyData::Type::Http);
 	const auto useHttp = (proxyType != ProxyData::Type::Mtproto)
 		&& (proxyType != ProxyData::Type::Web);
 	const auto useIPv4 = true;
-	const auto useIPv6 = settings.tryIPv6();
+	const auto useIPv6 = network.tryIPv6;
 	_data->setOptions(SessionOptions(
 		_instance->systemLangCode(),
 		_instance->cloudLangCode(),
 		_instance->langPackName(),
-		(isEnabled ? proxy : ProxyData()),
+		network,
 		useIPv4,
 		useIPv6,
 		useHttp,
@@ -324,6 +320,8 @@ void Session::sendAnything(crl::time msCanWait) {
 void Session::needToResumeAndSend() {
 	if (_killed) {
 		DEBUG_LOG(("Session Info: can't resume a killed session"));
+		return;
+	} else if (!_instance->network().snapshot().allowed()) {
 		return;
 	}
 	if (!_private) {
@@ -507,7 +505,16 @@ void Session::releaseKeyCreationOnFail() {
 	_dc->releaseKeyCreationOnFail(wasKeyCreation);
 }
 
-void Session::notifyDcConnectionInited() {
+void Session::notifyDcConnectionInited(const SessionOptions &options) {
+	const auto current = _data->options();
+	if (!options.network.allowed()
+		|| current.network.generation != options.network.generation
+		|| current.cloudLangCode != options.cloudLangCode
+		|| current.systemLangCode != options.systemLangCode
+		|| current.langPackName != options.langPackName
+		|| current.proxy != options.proxy) {
+		return;
+	}
 	DEBUG_LOG(("MTP Info: MTProtoDC::connectionWasInited(), dcWithShift %1"
 		).arg(_shiftedDcId));
 	_dc->setConnectionInited();

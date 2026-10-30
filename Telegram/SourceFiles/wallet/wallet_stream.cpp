@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "wallet/wallet_stream.h"
 
 #include "base/unixtime.h"
+#include "ui/toast/toast.h"
 #include "core/websocket_client.h"
 #include "wallet/wallet_address.h"
 #include "wallet/wallet_api.h"
@@ -44,6 +45,14 @@ Stream::Stream(not_null<Api*> api, Fn<void(StreamRefresh)> refresh)
 , _coalesceTimer([=] { flush(); })
 , _keepaliveTimer([=] { keepaliveTick(); })
 , _historyRecheckTimer([=] { recheckHistory(); }) {
+	_api->network().changes() | rpl::on_next([=] {
+		const auto restart = _started;
+		stop();
+		_started = restart;
+		if (restart && _api->network().snapshot().httpProxy()) {
+			acquire();
+		}
+	}, _lifetime);
 }
 
 Stream::~Stream() {
@@ -61,6 +70,11 @@ void Stream::start(const QString &address) {
 	_addressFriendly = FormatFriendly(address, false);
 	_started = true;
 	_retryAttempt = 0;
+	if (!_api->network().snapshot().httpProxy()) {
+		Ui::Toast::Show(u"Wallet live updates require an active SOCKS5 account "
+			"proxy. Periodic synchronization remains available."_q);
+		return;
+	}
 	acquire();
 }
 
@@ -85,7 +99,7 @@ bool Stream::healthy() const {
 }
 
 void Stream::acquire() {
-	if (!_started) {
+	if (!_started || !_api->network().snapshot().httpProxy()) {
 		return;
 	}
 	_api->cancelRequest(base::take(_acquireId));
@@ -121,7 +135,7 @@ void Stream::applyUrl(const QString &url, TimeId expires) {
 void Stream::openSocket(const Gram::StreamEndpoint &endpoint) {
 	++_generation;
 	_socket = nullptr;
-	_socket = std::make_unique<Core::WebSocketClient>();
+	_socket = std::make_unique<Core::WebSocketClient>(_api->network());
 
 	const auto raw = _socket.get();
 	const auto generation = _generation;
@@ -237,7 +251,7 @@ void Stream::failed() {
 }
 
 void Stream::scheduleRetry() {
-	if (!_started) {
+	if (!_started || !_api->network().snapshot().httpProxy()) {
 		return;
 	}
 	const auto index = std::min(_retryAttempt, int(kRetryDelays.size()) - 1);
@@ -294,6 +308,5 @@ bool Stream::mine(const std::vector<QString> &accounts) const {
 		return !canonical.isEmpty() && (canonical == _address);
 	});
 }
-
 
 } // namespace Wallet

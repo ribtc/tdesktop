@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtp_instance.h"
+#include "mtproto/proxy_check.h"
+#include "base/timer.h"
 #include "base/weak_ptr.h"
 
 namespace Storage {
@@ -20,6 +22,8 @@ enum class StartResult : uchar;
 namespace MTP {
 class AuthKey;
 class Config;
+class NetworkContext;
+struct NetworkSnapshot;
 } // namespace MTP
 
 namespace Main {
@@ -79,6 +83,15 @@ public:
 	[[nodiscard]] rpl::producer<Session*> sessionValue() const;
 	[[nodiscard]] rpl::producer<Session*> sessionChanges() const;
 
+	[[nodiscard]] MTP::NetworkContext &network() const;
+	[[nodiscard]] QString proxyBindingId() const;
+	[[nodiscard]] uint64 proxyBindingOperation() const;
+	[[nodiscard]] bool pendingLogin() const;
+	bool bindProxy(const QString &id);
+	void unbindProxy();
+	void cancelPendingLogin();
+	void retryProxy();
+
 	[[nodiscard]] MTP::Instance &mtp() const {
 		return *_mtp;
 	}
@@ -132,6 +145,12 @@ private:
 		int streamVersion,
 		std::unique_ptr<SessionSettings> settings);
 	void watchProxyChanges();
+	void cancelProxyCheck();
+	void startProxyCheck();
+	void scheduleProxyRetry();
+	[[nodiscard]] rpl::lifetime runProxyCheck(
+		MTP::NetworkSnapshot checking,
+		Fn<void(int)> done);
 	void watchSessionChanges();
 	bool checkForUpdates(const MTP::Response &message);
 	bool checkForNewSession(const MTP::Response &message);
@@ -145,6 +164,13 @@ private:
 	const not_null<Domain*> _domain;
 	const std::unique_ptr<Storage::Account> _local;
 
+	const std::shared_ptr<MTP::NetworkContext> _network;
+	MTP::ProxyCheckConnection _proxyCheckV4;
+	MTP::ProxyCheckConnection _proxyCheckV6;
+	base::Timer _proxyCheckTimer;
+	rpl::lifetime _proxyCheckLifetime;
+	uint64 _proxyBindingOperation = 0;
+	crl::time _proxyRetryDelay = 5000;
 	std::unique_ptr<MTP::Instance> _mtp;
 	rpl::variable<MTP::Instance*> _mtpValue;
 	std::unique_ptr<MTP::Instance> _mtpForKeysDestroy;

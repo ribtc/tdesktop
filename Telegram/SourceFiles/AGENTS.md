@@ -28,7 +28,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### core — application lifetime and process-wide services
 - Paths: `SourceFiles/core/`, `SourceFiles/main.cpp`, `SourceFiles/logs*`, `SourceFiles/settings.*`, `SourceFiles/config.h`, `SourceFiles/stdafx.h`, `SourceFiles/tray*`, `SourceFiles/data/raw/`
-- `Core::Application` and startup (`Launcher`, `Sandbox`), app and proxy settings, crash reports, shortcuts, file and mime utilities, the lib_base and lib_ui integration, logging, the tray menu, geolocation and screenshot protection. It must not own link routing, self-update or any feature.
+- `Core::Application` and startup (`Launcher`, `Sandbox`), app and proxy settings, proxy import parsing and bounded protocol-check scheduling, crash reports, shortcuts, file and mime utilities, the lib_base and lib_ui integration, logging, the tray menu, geolocation and screenshot protection. `account_network_restrictions.h` owns the current unsupported browser and system-service explanations; feature entry points display them before starting those services. Account HTTP uses `MTP::HttpTransport`, and `Core::WebSocketClient` requires a fixed account network context. It must not own link routing, self-update or any feature.
 
 ### core/links — links and clickable entities
 - Paths: `SourceFiles/core/deep_links/`, `SourceFiles/core/local_url_handlers*`, `SourceFiles/core/click_handler_types*`, `SourceFiles/core/phone_click_handler*`, `SourceFiles/core/bank_card_click_handler*`
@@ -40,7 +40,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### accounts — accounts and sessions
 - Paths: `SourceFiles/main/`
-- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. It must not own feature logic beyond holding components.
+- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. `account_management` owns local account groups and tags keyed by session identity, filtering, pagination and explicit account selection. It must not own management widgets or network binding implementation.
 
 ### lang — localization
 - Paths: `SourceFiles/lang/`, `SourceFiles/countries/`
@@ -92,7 +92,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### mtproto — MTProto transport
 - Paths: `SourceFiles/mtproto/`, `SourceFiles/tde2e/`
-- DC options and config, auth keys, sessions and resending, TCP, HTTP and TLS connections, proxies and checks, special-config fallback, dedicated loaders, the TL schemes and the tde2e end-to-end binding. It knows nothing about messages, peers or UI.
+- Account-owned network contexts, revocable connection snapshots and fixed-route HTTP transports, DC options and config, auth keys, sessions and resending, TCP, HTTP and TLS connections, proxies and checks, special-config fallback, dedicated loaders, the TL schemes and the tde2e end-to-end binding. It knows nothing about messages, peers or UI.
 
 ### storage/local — encrypted local persistence
 - Paths: `SourceFiles/storage/storage_account*`, `SourceFiles/storage/storage_domain*`, `SourceFiles/storage/localstorage*`, `SourceFiles/storage/details/`, `SourceFiles/storage/serialize_*`, `SourceFiles/storage/storage_file_lock*`
@@ -353,6 +353,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 ### calls — calls service and one-to-one calls
 - Paths: `SourceFiles/calls/`, `SourceFiles/calls/group/ui/desktop_capture_choose_source*`, `SourceFiles/ui/controls/call_button*`, `SourceFiles/ui/controls/call_mute_button*`, `SourceFiles/ui/boxes/rate_call_box*`
 - `Calls::Instance` that starts and tracks every call, the tgcalls 1:1 call model and key fingerprint, the call window and panel, the active-call top bar, recent calls, device menus, the screen-source picker and call rating. It must not own group calls.
+- `calls_network.*` owns account media eligibility. RTC engines stay blocked until their proxy-only transport is verified; MTP broadcast media uses the account snapshot. Call models revoke their media when that snapshot expires.
 
 ### calls/group — group calls and live streams
 - Paths: `SourceFiles/calls/group/`, `SourceFiles/media/view/media_view_video_stream*`

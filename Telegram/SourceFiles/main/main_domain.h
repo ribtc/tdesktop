@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "core/proxy_check_queue.h"
 
 namespace Storage {
 class Domain;
@@ -36,9 +37,6 @@ public:
 		std::unique_ptr<Account> account;
 	};
 
-	static constexpr auto kMaxAccounts = 3;
-	static constexpr auto kPremiumMaxAccounts = 6;
-
 	explicit Domain(const QString &dataName);
 	~Domain();
 
@@ -65,14 +63,12 @@ public:
 	void resetWithForgottenPasscode();
 	void finish();
 
-	[[nodiscard]] int maxAccounts() const;
-	[[nodiscard]] rpl::producer<int> maxAccountsChanges() const;
-
 	[[nodiscard]] Storage::Domain &local() const {
 		return *_local;
 	}
 
 	[[nodiscard]] Wallet::VaultRuntime &walletKeyring();
+	[[nodiscard]] Core::ProxyCheckQueue &proxyChecks();
 
 	[[nodiscard]] auto accounts() const
 		-> const std::vector<AccountWithIndex> &;
@@ -101,6 +97,7 @@ public:
 
 	// Drops session-less accounts that have no window open for them.
 	void removeRedundantAccounts();
+	void scheduleWriteAccounts();
 
 	// Interface for Storage::Domain.
 	void accountAddedInStorage(AccountWithIndex accountWithIndex);
@@ -135,7 +132,6 @@ private:
 	[[nodiscard]] bool finishPasscodeClearAfterReset();
 
 	void watchSession(not_null<Account*> account);
-	void scheduleWriteAccounts();
 	void checkForLastProductionConfig(not_null<Main::Account*> account);
 	void updateUnreadBadge();
 	void scheduleUpdateUnreadBadge();
@@ -145,6 +141,7 @@ private:
 	const std::unique_ptr<Storage::Domain> _local;
 
 	std::shared_ptr<Wallet::VaultRuntime> _walletKeyring;
+	Core::ProxyCheckQueue _proxyChecks;
 	std::vector<AccountWithIndex> _accounts;
 	rpl::event_stream<> _accountsChanges;
 	rpl::variable<Account*> _active = nullptr;
@@ -159,8 +156,6 @@ private:
 	bool _unreadBadgeMuted = true;
 	bool _unreadBadgeUpdateScheduled = false;
 	bool _passcodeDeriving = false;
-
-	rpl::variable<int> _lastMaxAccounts;
 
 	rpl::lifetime _activeLifetime;
 	rpl::lifetime _lifetime;

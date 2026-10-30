@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "iv/iv_instance.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
 #include "base/unixtime.h"
@@ -1120,6 +1122,11 @@ void Instance::openWithIvPreferred(
 		QString uri,
 		QVariant context) {
 	const auto openExternal = [=] {
+		const auto error = Core::AccountWebViewError();
+		if (!error.isEmpty()) {
+			Ui::Toast::Show(error);
+			return;
+		}
 		auto my = context.value<ClickHandlerContext>();
 		my.ignoreIv = true;
 		const auto updated = QVariant::fromValue(my);
@@ -1182,6 +1189,11 @@ void Instance::openWithIvPreferred(
 void Instance::showTonSite(
 		const QString &uri,
 		QVariant context) {
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		Ui::Toast::Show(error);
+		return;
+	}
 	if (!Controller::IsGoodTonSiteUrl(uri)) {
 		Ui::Toast::Show(tr::lng_iv_not_supported(tr::now));
 		return;

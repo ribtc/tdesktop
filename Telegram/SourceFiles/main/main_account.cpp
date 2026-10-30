@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/platform/base_platform_info.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "storage/storage_account.h"
 #include "storage/storage_domain.h" // Storage::StartResult.
 #include "storage/serialize_common.h"
@@ -20,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
+#include "mtproto/network_context.h"
 #include "mainwidget.h"
 #include "api/api_updates.h"
 #include "ui/ui_utility.h"
@@ -48,10 +50,13 @@ Account::Account(not_null<Domain*> domain, const QString &dataName, int index)
 : _domain(domain)
 , _local(std::make_unique<Storage::Account>(
 	this,
-	ComposeDataString(dataName, index))) {
+	ComposeDataString(dataName, index)))
+, _network(std::make_shared<MTP::NetworkContext>()) {
 }
 
 Account::~Account() {
+	cancelProxyCheck();
+	_network->block();
 	if (const auto session = maybeSession()) {
 		session->saveSettingsNowIfNeeded();
 		_local->writeSearchSuggestionsIfNeeded();
@@ -75,14 +80,19 @@ std::unique_ptr<MTP::Config> Account::prepareToStart(
 	return _local->start(std::move(localKey));
 }
 
+MTP::NetworkContext &Account::network() const {
+	return *_network;
+}
+
 void Account::start(std::unique_ptr<MTP::Config> config) {
+	watchProxyChanges();
 	_appConfig = std::make_unique<AppConfig>(this);
 	startMtp(config
 		? std::move(config)
 		: std::make_unique<MTP::Config>(
 			Core::App().fallbackProductionConfig()));
+	retryProxy();
 	_appConfig->start();
-	watchProxyChanges();
 	watchSessionChanges();
 }
 
@@ -91,25 +101,162 @@ void Account::prepareToStartAdded(
 	_local->startAdded(std::move(localKey));
 }
 
-void Account::watchProxyChanges() {
-	using ProxyChange = Core::Application::ProxyChange;
+QString Account::proxyBindingId() const {
+	return _local->readPref<QString>("account-proxy-binding");
+}
 
-	Core::App().proxyChanges(
-	) | rpl::on_next([=](const ProxyChange &change) {
-		const auto key = [&](const MTP::ProxyData &proxy) {
-			return (proxy.type == MTP::ProxyData::Type::Mtproto
-				|| proxy.type == MTP::ProxyData::Type::Web)
-				? std::make_pair(proxy.host, proxy.port)
-				: std::make_pair(QString(), uint32(0));
-		};
-		if (_mtp) {
-			_mtp->restart();
-			if (key(change.was) != key(change.now)) {
-				_mtp->reInitConnection(_mtp->mainDcId());
-			}
+uint64 Account::proxyBindingOperation() const {
+	return _proxyBindingOperation;
+}
+
+bool Account::pendingLogin() const {
+	return _local->readPref<bool>("account-pending-login");
+}
+
+bool Account::bindProxy(const QString &id) {
+	const auto entry = Core::App().settings().proxyLibrary().find(id);
+	if (!entry || !Core::ProxyLibrary::Supported(entry->proxy)) {
+		return false;
+	}
+	++_proxyBindingOperation;
+	_proxyRetryDelay = 5000;
+	_local->writePref<QString>("account-proxy-binding", id);
+	_local->writePref<bool>("account-pending-login", !sessionExists());
+	_domain->scheduleWriteAccounts();
+	retryProxy();
+	return true;
+}
+
+void Account::unbindProxy() {
+	++_proxyBindingOperation;
+	_proxyRetryDelay = 5000;
+	cancelProxyCheck();
+	_local->writePref<QString>("account-proxy-binding", QString());
+	const auto unbound = _network->bind({}, {}, false);
+	Assert(!unbound.allowed());
+}
+
+void Account::cancelPendingLogin() {
+	if (!sessionExists()) {
+		_local->writePref<bool>("account-pending-login", false);
+		unbindProxy();
+		_domain->scheduleWriteAccounts();
+	}
+}
+
+void Account::cancelProxyCheck() {
+	_proxyCheckLifetime.destroy();
+	_proxyCheckTimer.cancel();
+	MTP::ResetProxyCheckers(_proxyCheckV4, _proxyCheckV6);
+}
+
+void Account::retryProxy() {
+	cancelProxyCheck();
+	_network->block();
+	if (!_mtp) {
+		return;
+	}
+	const auto blocked = _network->snapshot();
+	const auto remaining = std::make_shared<int>(_mtpForKeysDestroy ? 2 : 1);
+	const auto closed = crl::guard(this, [=] {
+		if (!--*remaining && blocked.current()) {
+			startProxyCheck();
 		}
-		if (_mtpForKeysDestroy) {
-			_mtpForKeysDestroy->restart();
+	});
+	_mtp->quiesceNetwork(closed);
+	if (_mtpForKeysDestroy) {
+		_mtpForKeysDestroy->quiesceNetwork(closed);
+	}
+}
+
+void Account::startProxyCheck() {
+	const auto id = proxyBindingId();
+	const auto entry = Core::App().settings().proxyLibrary().find(id);
+	const auto checking = _network->bind(
+		id,
+		entry ? entry->proxy : MTP::ProxyData(),
+		entry && entry->tryIPv6);
+	if (!entry || !Core::ProxyLibrary::Supported(entry->proxy)) {
+		_network->completeValidation(checking, false);
+		return;
+	}
+	_proxyCheckLifetime = _domain->proxyChecks().enqueue(
+		*entry,
+		crl::guard(this, [=](const Core::ProxyEntry &, Fn<void(int)> done) {
+			return runProxyCheck(checking, std::move(done));
+		}),
+		crl::guard(this, [=](int ping) {
+			if (_network->completeValidation(checking, ping >= 0)) {
+				if (ping >= 0) {
+					_proxyRetryDelay = 5000;
+				} else {
+					scheduleProxyRetry();
+				}
+			}
+		}));
+}
+
+rpl::lifetime Account::runProxyCheck(
+		MTP::NetworkSnapshot checking,
+		Fn<void(int)> done) {
+	_proxyCheckTimer.setCallback([=] { done(-1); });
+	_proxyCheckTimer.callOnce(15000);
+	MTP::StartProxyCheck(
+		_mtp.get(),
+		checking.proxy,
+		checking.tryIPv6,
+		_proxyCheckV4,
+		_proxyCheckV6,
+		crl::guard(this, [=](MTP::details::AbstractConnection*, int ping) {
+			crl::on_main(this, [=] { done(ping); });
+		}),
+		crl::guard(this, [=](MTP::details::AbstractConnection *raw) {
+			crl::on_main(this, [=] {
+				if (!checking.current()) {
+					return;
+				}
+				MTP::DropProxyChecker(_proxyCheckV4, _proxyCheckV6, raw);
+				if (!MTP::HasProxyCheckers(_proxyCheckV4, _proxyCheckV6)) {
+					done(-1);
+				}
+			});
+		}));
+	return rpl::lifetime([=] {
+		_proxyCheckTimer.cancel();
+		MTP::ResetProxyCheckers(_proxyCheckV4, _proxyCheckV6);
+	});
+}
+
+void Account::scheduleProxyRetry() {
+	const auto failed = _network->snapshot();
+	if (failed.state != MTP::NetworkState::Failed) {
+		return;
+	}
+	const auto operation = _proxyBindingOperation;
+	_proxyCheckTimer.setCallback(crl::guard(this, [=] {
+		if (failed.current() && operation == _proxyBindingOperation) {
+			retryProxy();
+		}
+	}));
+	_proxyCheckTimer.callOnce(_proxyRetryDelay);
+	_proxyRetryDelay = std::min(_proxyRetryDelay * 2, crl::time(60000));
+}
+
+void Account::watchProxyChanges() {
+	Core::App().settings().proxyLibrary().changes(
+	) | rpl::on_next([=](Core::ProxyLibraryChange change) {
+		if (change.id != proxyBindingId() || !change.connection) {
+			return;
+		}
+		if (change.before) {
+			++_proxyBindingOperation;
+			_proxyRetryDelay = 5000;
+			cancelProxyCheck();
+			_network->block();
+		} else if (Core::App().settings().proxyLibrary().find(change.id)) {
+			retryProxy();
+		} else {
+			unbindProxy();
 		}
 	}, _lifetime);
 }
@@ -192,6 +339,7 @@ void Account::createSession(
 	Expects(_session == nullptr);
 	Expects(_sessionValue.current() == nullptr);
 
+	_local->writePref<bool>("account-pending-login", false);
 	_session = std::make_unique<Session>(this, user, std::move(settings));
 	if (!serialized.isEmpty()) {
 		local().readSelf(_session.get(), serialized, streamVersion);
@@ -428,6 +576,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 
 	auto fields = base::take(_mtpFields);
 	fields.config = std::move(config);
+	fields.network = _network;
 	fields.deviceModel = Platform::DeviceModelPretty();
 	fields.systemVersion = Platform::SystemVersionPretty();
 	_mtp = std::make_unique<MTP::Instance>(
@@ -473,7 +622,14 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 	_mtp->setStateChangedHandler([=](MTP::ShiftedDcId dc, int32 state) {
 		if (dc == _mtp->mainDcId()) {
 			Core::App().settings().proxy().connectionTypeChangesNotify();
-			Core::App().checkProxyRotation(this, state);
+			if (_network->snapshot().state == MTP::NetworkState::Legacy) {
+				Core::App().checkProxyRotation(this, state);
+			} else if (state < 0
+				&& _network->snapshot().state == MTP::NetworkState::Ready) {
+				cancelProxyCheck();
+				_network->block();
+				scheduleProxyRetry();
+			}
 		}
 	});
 	_mtp->setSessionResetHandler([=](MTP::ShiftedDcId shiftedDcId) {
@@ -552,6 +708,9 @@ void Account::forcedLogOut() {
 }
 
 void Account::loggedOut() {
+	cancelProxyCheck();
+	_network->block();
+	_local->writePref<bool>("account-pending-login", false);
 	_loggingOut = false;
 	Media::Player::mixer()->stopAndClear();
 	destroySession(DestroyReason::LoggedOut);
@@ -572,6 +731,7 @@ void Account::destroyMtpKeys(MTP::AuthKeysList &&keys) {
 	}
 	auto destroyFields = MTP::Instance::Fields();
 
+	destroyFields.network = _network;
 	destroyFields.mainDcId = MTP::Instance::Fields::kNoneMainDc;
 	destroyFields.config = std::make_unique<MTP::Config>(_mtp->config());
 	destroyFields.keys = std::move(keys);
@@ -631,10 +791,15 @@ void Account::handleLoginCode(const QString &code) const {
 void Account::resetAuthorizationKeys() {
 	Expects(_mtp != nullptr);
 
+	cancelProxyCheck();
+
 	{
 		const auto old = base::take(_mtp);
 		auto config = std::make_unique<MTP::Config>(old->config());
 		startMtp(std::move(config));
+	}
+	if (_network->snapshot().state == MTP::NetworkState::Checking) {
+		retryProxy();
 	}
 	local().writeMtpData();
 }

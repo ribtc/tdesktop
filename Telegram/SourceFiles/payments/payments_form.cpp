@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/payments_form.h"
 
+#include "main/main_account.h"
+#include "mtproto/http_transport.h"
+
 #include "main/main_session.h"
 #include "data/data_channel.h"
 #include "data/data_session.h"
@@ -1193,11 +1196,20 @@ void Form::validateCard(
 	if (_stripe) {
 		return;
 	}
+	if (!_session->account().network().snapshot().httpProxy()) {
+		_updates.fire(Error{
+			Error::Type::Validate,
+			u"Card tokenization requires an active SOCKS5 account proxy."_q,
+		});
+		return;
+	}
 	auto configuration = Stripe::PaymentConfiguration{
 		.publishableKey = method.publishableKey,
 		.companyName = "Telegram",
 	};
-	_stripe = std::make_unique<Stripe::APIClient>(std::move(configuration));
+	_stripe = std::make_unique<Stripe::APIClient>(
+		std::move(configuration),
+		std::make_unique<MTP::HttpTransport>(_session->account().network()));
 	auto card = Stripe::CardParams{
 		.number = details.number,
 		.expMonth = details.expireMonth,
@@ -1208,12 +1220,18 @@ void Form::validateCard(
 		.addressCountry = details.addressCountry,
 	};
 	showProgress();
+	const auto route = _session->account().network().snapshot();
 	_stripe->createTokenWithCard(std::move(card), crl::guard(this, [=](
 			Stripe::Token token,
 			Stripe::Error error) {
 		hideProgress();
 		_stripe = nullptr;
 
+		if (!route.current()) {
+			_updates.fire(Error{ Error::Type::Validate,
+				u"The account proxy changed. Try again."_q });
+			return;
+		}
 		if (error) {
 			LOG(("Stripe Error %1: %2 (%3)"
 				).arg(int(error.code())
@@ -1241,13 +1259,21 @@ void Form::validateCard(
 	if (_smartglocal) {
 		return;
 	}
+	if (!_session->account().network().snapshot().httpProxy()) {
+		_updates.fire(Error{
+			Error::Type::Validate,
+			u"Card tokenization requires an active SOCKS5 account proxy."_q,
+		});
+		return;
+	}
 	auto configuration = SmartGlocal::PaymentConfiguration{
 		.publicToken = method.publicToken,
 		.tokenizeUrl = method.tokenizeUrl,
 		.isTest = _invoice.isTest,
 	};
 	_smartglocal = std::make_unique<SmartGlocal::APIClient>(
-		std::move(configuration));
+		std::move(configuration),
+		std::make_unique<MTP::HttpTransport>(_session->account().network()));
 	auto card = Stripe::CardParams{
 		.number = details.number,
 		.expMonth = details.expireMonth,
@@ -1258,12 +1284,18 @@ void Form::validateCard(
 		.addressCountry = details.addressCountry,
 	};
 	showProgress();
+	const auto route = _session->account().network().snapshot();
 	_smartglocal->createTokenWithCard(std::move(card), crl::guard(this, [=](
 			SmartGlocal::Token token,
 			SmartGlocal::Error error) {
 		hideProgress();
 		_smartglocal = nullptr;
 
+		if (!route.current()) {
+			_updates.fire(Error{ Error::Type::Validate,
+				u"The account proxy changed. Try again."_q });
+			return;
+		}
 		if (error) {
 			LOG(("SmartGlocal Error %1: %2 (%3)"
 				).arg(int(error.code())

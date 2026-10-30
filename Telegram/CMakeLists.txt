@@ -488,6 +488,8 @@ PRIVATE
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
     calls/calls_instance.h
+    calls/calls_network.cpp
+    calls/calls_network.h
     calls/calls_panel.cpp
     calls/calls_panel.h
     calls/calls_panel_background.cpp
@@ -561,6 +563,7 @@ PRIVATE
     chat_helpers/ttl_media_layer_widget.h
     core/application.cpp
     core/application.h
+    core/account_network_restrictions.h
     core/proxy_rotation_manager.cpp
     core/proxy_rotation_manager.h
     core/cached_webview_availability.h
@@ -580,6 +583,12 @@ PRIVATE
     core/core_settings.h
     core/core_settings_proxy.cpp
     core/core_settings_proxy.h
+    core/proxy_import.cpp
+    core/proxy_import.h
+    core/proxy_check_queue.cpp
+    core/proxy_check_queue.h
+    core/proxy_library.cpp
+    core/proxy_library.h
     core/crash_report_window.cpp
     core/crash_report_window.h
     core/crash_reports.cpp
@@ -1535,6 +1544,8 @@ PRIVATE
     layout/layout_document_generic_preview.h
     layout/layout_item_base.cpp
     layout/layout_item_base.h
+    main/account_management.cpp
+    main/account_management.h
     main/main_account.cpp
     main/main_account.h
     main/main_app_config.cpp
@@ -1711,6 +1722,10 @@ PRIVATE
     mtproto/details/mtproto_web_proxy_socket.h
     mtproto/facade.cpp
     mtproto/facade.h
+    mtproto/http_transport.cpp
+    mtproto/http_transport.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
     mtproto/mtp_instance.cpp
     mtproto/mtp_instance.h
     mtproto/proxy_check.cpp
@@ -1928,6 +1943,8 @@ PRIVATE
     settings/cloud_password/settings_cloud_password_validate_icon.h
     settings/sections/settings_active_sessions.cpp
     settings/sections/settings_active_sessions.h
+    settings/sections/settings_proxy_management.cpp
+    settings/sections/settings_proxy_management.h
     settings/sections/settings_advanced.cpp
     settings/sections/settings_advanced.h
     settings/sections/settings_chat.cpp
@@ -1953,6 +1970,8 @@ PRIVATE
     settings/sections/settings_folders.h
     settings/sections/settings_global_ttl.cpp
     settings/sections/settings_global_ttl.h
+    settings/sections/settings_account_management.cpp
+    settings/sections/settings_account_management.h
     settings/sections/settings_information.cpp
     settings/sections/settings_information.h
     settings/settings_intro.cpp
@@ -2022,6 +2041,8 @@ PRIVATE
     storage/storage_account.h
     storage/storage_cloud_blob.cpp
     storage/storage_cloud_blob.h
+    storage/storage_account_index.cpp
+    storage/storage_account_index.h
     storage/storage_domain.cpp
     storage/storage_domain.h
     storage/storage_facade.cpp
@@ -2428,6 +2449,10 @@ PRIVATE
     window/window_controller.h
     window/window_filters_favorite.cpp
     window/window_filters_favorite.h
+    window/window_account_management.cpp
+    window/window_account_management.h
+    window/window_accounts_rail.cpp
+    window/window_accounts_rail.h
     window/window_filters_menu.cpp
     window/window_filters_menu.h
     window/window_history_hider.cpp

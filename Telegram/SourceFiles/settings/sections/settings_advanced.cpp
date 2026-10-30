@@ -32,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
+#include "mtproto/network_context.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -110,24 +111,14 @@ void BuildDataStorageSection(SectionBuilder &builder) {
 	});
 
 	const auto connectionType = [=] {
-		const auto transport = account->mtp().dctransport();
-		if (!Core::App().settings().proxy().isEnabled()) {
-			return transport.isEmpty()
-				? tr::lng_connection_auto_connecting(tr::now)
-				: tr::lng_connection_auto(tr::now, lt_transport, transport);
-		} else {
-			return transport.isEmpty()
-				? tr::lng_connection_proxy_connecting(tr::now)
-				: tr::lng_connection_proxy(tr::now, lt_transport, transport);
-		}
+		return AccountProxyStatus(account);
 	};
-
 	builder.addButton({
 		.id = u"advanced/connection_type"_q,
 		.title = tr::lng_settings_connection_type(),
 		.icon = { &st::menuIconNetwork },
 		.label = rpl::merge(
-			Core::App().settings().proxy().connectionTypeChanges(),
+			account->network().changes(),
 			tr::lng_connection_auto_connecting() | rpl::to_empty
 		) | rpl::map(connectionType),
 		.onClick = [=] {
@@ -1391,22 +1382,12 @@ void SetupConnectionType(
 		not_null<::Main::Account*> account,
 		not_null<Ui::VerticalLayout*> container) {
 	const auto connectionType = [=] {
-		const auto transport = account->mtp().dctransport();
-		if (!Core::App().settings().proxy().isEnabled()) {
-			return transport.isEmpty()
-				? tr::lng_connection_auto_connecting(tr::now)
-				: tr::lng_connection_auto(tr::now, lt_transport, transport);
-		} else {
-			return transport.isEmpty()
-				? tr::lng_connection_proxy_connecting(tr::now)
-				: tr::lng_connection_proxy(tr::now, lt_transport, transport);
-		}
-	};
-	const auto button = AddButtonWithLabel(
+		return AccountProxyStatus(account);
+	};	const auto button = AddButtonWithLabel(
 		container,
 		tr::lng_settings_connection_type(),
 		rpl::merge(
-			Core::App().settings().proxy().connectionTypeChanges(),
+			account->network().changes(),
 			tr::lng_connection_auto_connecting() | rpl::to_empty
 		) | rpl::map([=] { return connectionType(); }),
 		st::settingsButton,

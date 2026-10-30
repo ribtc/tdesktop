@@ -6482,6 +6482,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_call_status_sure" = "Click on the Camera icon if you want to start a video call.";
 "lng_call_fingerprint_tooltip" = "If the emoji on {user}'s screen are the same, this call is 100% secure";
 
+"lng_call_network_unsupported" = "Real-time calls and screen sharing are unavailable because their media connections cannot yet be isolated through this account’s proxy. Telegram live stream playback remains available.";
+"lng_call_network_blocked" = "This account’s proxy is unavailable or has changed. Reconnect the account’s proxy, then join again.";
+
 "lng_call_error_not_available" = "Sorry, you cannot call {user} because of their privacy settings. You can ask them to modify their setting or to call you instead.";
 "lng_call_error_outdated" = "{user}'s app does not support calls. They need to update their app before you can call them.";
 "lng_call_error_no_camera" = "No camera could be found. Please make sure that your camera is connected to the computer.";
@@ -9337,3 +9340,126 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passcode_strength_advice_fine" = "This passcode is hard to guess.";
 
 // Keys finished
+
+"lng_account_proxy_title" = "Account proxy";
+"lng_account_proxy_unbound" = "Network blocked. Bind a proxy before signing in or connecting.";
+"lng_account_proxy_checking" = "Checking this account's proxy…";
+"lng_account_proxy_ready" = "Proxy verified";
+"lng_account_proxy_failed" = "Network blocked. Proxy verification failed; retry or select another proxy.";
+"lng_account_proxy_unsupported" = "Unsupported configuration. Use SOCKS5 or MTProto with a numeric IP address.";
+"lng_account_proxy_library_error" = "The saved proxy library cannot be read. Original data has been preserved; network access remains blocked.";
+"lng_account_proxy_bind" = "Bind to this account";
+"lng_account_proxy_unbind" = "Unbind and block network";
+"lng_account_proxy_shared#one" = "This proxy is bound to {count} account. Accounts sharing it may share the same network exit.";
+"lng_account_proxy_shared#other" = "This proxy is bound to {count} accounts. Accounts sharing it may share the same network exit.";
+"lng_account_proxy_edit_warning#one" = "Changing or deleting this proxy will disconnect the {count} account bound to it.";
+"lng_account_proxy_edit_warning#other" = "Changing or deleting this proxy will disconnect all {count} accounts bound to it.";
+"lng_account_proxy_numeric" = "Only numeric IPv4 or IPv6 proxy addresses are supported. Host names are not resolved.";
+"lng_account_proxy_changed" = "This proxy changed while the editor was open. Reopen it and try again.";
+
+"lng_accounts_rail_title" = "Accounts";
+"lng_accounts_all" = "All accounts";
+"lng_accounts_all_short" = "All";
+
+"lng_account_http_blocked" = "Download blocked. Verify this account's proxy or bind an available proxy, then try again.";
+"lng_account_http_unsupported" = "This download uses an external HTTP service and requires a SOCKS5 proxy. Telegram files remain available through MTProto.";
+
+"lng_proxy_management_title" = "Proxy management";
+"lng_proxy_management_add" = "Add proxy";
+"lng_proxy_management_file" = "Import file";
+"lng_proxy_management_clipboard" = "Import clipboard";
+"lng_proxy_management_clear" = "Clear library";
+"lng_proxy_management_check" = "Check proxies";
+"lng_proxy_management_cancel_check" = "Cancel checks";
+"lng_proxy_management_search" = "Search notes, IP or username";
+"lng_proxy_management_unknown" = "Unknown country";
+"lng_proxy_management_untested" = "Not checked";
+"lng_proxy_management_checking" = "Checking…";
+"lng_proxy_management_unavailable" = "Unavailable";
+"lng_proxy_management_cancelled" = "Cancelled";
+"lng_proxy_management_available" = "Available · {amount} ms";
+"lng_proxy_management_summary" = "{amount} proxies";
+"lng_proxy_management_bindings" = "{amount} bound accounts";
+"lng_proxy_management_notes" = "Edit notes";
+"lng_proxy_management_family" = "Allow IPv6 targets";
+"lng_proxy_management_family_hint" = "IPv4 is always available; this also permits IPv6 targets. MTProto server exit addresses cannot be controlled.";
+"lng_proxy_management_import_title" = "Import proxies";
+"lng_proxy_management_import_hint" = "One proxy per line. Use socks5://user:password@IP:port, IP:port, IP:port:user:password or user:password@IP:port. Put IPv6 addresses in brackets. Use tg://proxy links for MTProto. Empty lines and # comments are ignored. Passwords and secrets stay hidden.";
+"lng_proxy_management_choose_file" = "Choose or drop a UTF-8 text file";
+"lng_proxy_management_preview_empty" = "Choose a file or read the clipboard to preview.";
+"lng_proxy_management_import_confirm" = "Import valid entries";
+"lng_proxy_management_error_format" = "Invalid format";
+"lng_proxy_management_error_protocol" = "Unsupported protocol";
+"lng_proxy_management_error_address" = "A literal IPv4 or IPv6 address is required";
+"lng_proxy_management_error_port" = "Port must be between 1 and 65535";
+"lng_proxy_management_error_secret" = "Invalid MTProto secret";
+"lng_proxy_management_error_duplicate" = "Duplicate proxy";
+"lng_proxy_management_error_limit" = "Input exceeds the size or row limit";
+"lng_proxy_management_preview_line" = "Line {amount}";
+"lng_proxy_management_import_done" = "Imported {amount} proxies. Invalid and duplicate rows were skipped.";
+"lng_proxy_management_confirm_change" = "This changes the connection of the following accounts. They will stop until the proxy is verified again. Shared accounts may use the same public exit IP.";
+"lng_proxy_management_confirm_delete" = "Delete these proxies? The following accounts will keep their login data but become unbound and blocked.";
+"lng_proxy_management_no_accounts" = "No accounts are bound to these proxies.";
+"lng_proxy_management_readonly" = "The saved proxy library cannot be edited. Its original data has been preserved.";
+"lng_proxy_management_changed" = "The proxy changed or could not be saved. Reopen the editor.";
+"lng_proxy_management_previous" = "Previous";
+"lng_proxy_management_next" = "Next";
+"lng_proxy_management_columns" = "Notes / address · type · country · username · accounts";
+"lng_proxy_management_page" = "Page {amount}";
+"lng_proxy_management_hidden" = "Password / secret hidden";
+"lng_proxy_management_file_error" = "Could not read this file, or it exceeds 2 MiB.";
+"lng_proxy_management_edit" = "Edit connection";
+"lng_proxy_management_delete" = "Delete proxy";
+"lng_proxy_management_check_one" = "Check proxy";
+"lng_proxy_management_unsupported" = "Not available in isolated mode";
+"lng_management_back" = "Back to chats";
+"lng_management_accounts" = "Account management";
+"lng_management_proxies" = "Proxy isolation";
+"lng_management_add" = "Add account";
+"lng_management_groups" = "Manage groups";
+"lng_management_filter_group" = "Group filter";
+"lng_management_filter_status" = "Status filter";
+"lng_management_all" = "All";
+"lng_management_ungrouped" = "Ungrouped";
+"lng_management_ready" = "Proxy verified";
+"lng_management_checking" = "Checking · blocked";
+"lng_management_failed" = "Proxy failed · blocked";
+"lng_management_unbound" = "Unbound · blocked";
+"lng_management_search" = "Search names, phone numbers or tags";
+"lng_management_select_page" = "Select current page";
+"lng_management_select_all" = "Select all matching accounts";
+"lng_management_clear" = "Clear selection";
+"lng_management_move" = "Move to group";
+"lng_management_bind" = "Bind proxy";
+"lng_management_previous" = "Previous page";
+"lng_management_next" = "Next page";
+"lng_management_summary" = "{amount} matches · {selected} selected · Page {current} of {total}";
+"lng_management_actions" = "Account actions";
+"lng_management_group_name" = "Group name";
+"lng_management_create_group" = "Create group";
+"lng_management_rename" = "Rename";
+"lng_management_delete" = "Delete";
+"lng_management_delete_group_confirm" = "Delete this group? Its accounts will become ungrouped. Accounts and proxy bindings are kept.";
+"lng_management_open" = "Open account";
+"lng_management_tags" = "Tags (comma separated)";
+"lng_management_unreadable" = "Account metadata cannot be read. Existing data has been preserved.";
+"lng_management_shared" = "This proxy currently has {amount} account bindings. You are applying it to {selected} selected accounts, adding {added} new bindings. Accounts sharing a proxy may share the same public IP. The target list below is fixed.";
+"lng_management_rejected" = "Failed: account removed or proxy unavailable";
+"lng_management_results" = "Per-account results";
+
+"lng_management_moved" = "Group updated";
+"lng_management_move_failed" = "Failed: account or group unavailable";
+
+"lng_management_replaced" = "Binding changed after this operation";
+
+"lng_management_selection" = "Selection";
+"lng_management_account_column" = "Account";
+"lng_management_group_column" = "Group";
+"lng_management_proxy_column" = "Bound proxy";
+"lng_management_empty" = "No matching accounts";
+
+"lng_proxy_management_column_notes" = "Notes";
+"lng_proxy_management_column_type" = "Type";
+"lng_proxy_management_column_country" = "Country";
+"lng_proxy_management_column_accounts" = "Accounts";
+"lng_proxy_management_column_actions" = "Actions";

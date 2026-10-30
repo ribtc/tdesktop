@@ -104,3 +104,90 @@ if (APPLE)
             "$<TARGET_FILE_DIR:test_bot_menu_hold>/Contents/Resources/"
     )
 endif()
+
+add_executable(test_network_context)
+init_target(test_network_context "(tests)")
+target_include_directories(test_network_context PRIVATE ${src_loc})
+nice_target_sources(test_network_context ${src_loc}
+PRIVATE
+    core/proxy_library.cpp
+    core/proxy_library.h
+    mtproto/http_transport.cpp
+    mtproto/http_transport.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_network_context.cpp
+)
+target_precompile_headers(test_network_context PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_network_context PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)
+
+add_executable(test_account_consumers)
+init_target(test_account_consumers "(tests)")
+target_include_directories(test_account_consumers PRIVATE ${src_loc})
+nice_target_sources(test_account_consumers ${src_loc}
+PRIVATE
+    core/websocket_client.cpp
+    core/websocket_client.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_account_consumers.cpp
+)
+target_precompile_headers(test_account_consumers PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_account_consumers PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)
+
+add_executable(test_calls_network)
+init_target(test_calls_network "(tests)")
+target_include_directories(test_calls_network PRIVATE ${src_loc})
+nice_target_sources(test_calls_network ${src_loc}
+PRIVATE
+    calls/calls_network.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_calls_network.cpp
+)
+target_precompile_headers(test_calls_network PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_calls_network PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)
+
+add_executable(test_proxy_import)
+init_target(test_proxy_import "(tests)")
+target_include_directories(test_proxy_import PRIVATE ${src_loc})
+nice_target_sources(test_proxy_import ${src_loc}
+PRIVATE
+    core/proxy_check_queue.cpp
+    core/proxy_check_queue.h
+    core/proxy_import.cpp
+    core/proxy_import.h
+    core/proxy_library.cpp
+    core/proxy_library.h
+    mtproto/mtproto_proxy_data.cpp
+    tests/test_proxy_import.cpp
+)
+target_precompile_headers(test_proxy_import PRIVATE
+    ${src_loc}/mtproto/network_context.h
+)
+target_link_libraries(test_proxy_import PRIVATE
+    desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::external_qt
+)

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "mtproto/details/mtproto_domain_resolver.h"
+#include "mtproto/http_transport.h"
 #include "base/bytes.h"
 #include "base/weak_ptr.h"
 
@@ -20,6 +21,7 @@ namespace MTP::details {
 class SpecialConfigRequest : public QObject {
 public:
 	SpecialConfigRequest(
+		NetworkSnapshot route,
 		Fn<void(
 			DcId dcId,
 			const std::string &ip,
@@ -29,6 +31,7 @@ public:
 		const QString &domainString,
 		const QString &phone);
 	SpecialConfigRequest(
+		NetworkSnapshot route,
 		Fn<void()> timeDoneCallback,
 		bool isTestMode,
 		const QString &domainString);
@@ -48,6 +51,7 @@ private:
 	};
 
 	SpecialConfigRequest(
+		NetworkSnapshot route,
 		Fn<void(
 			DcId dcId,
 			const std::string &ip,
@@ -76,7 +80,8 @@ private:
 	QString _phone;
 	MTPhelp_ConfigSimple _simpleConfig;
 
-	QNetworkAccessManager _manager;
+	const NetworkSnapshot _route;
+	HttpTransport _manager;
 	std::vector<Attempt> _attempts;
 	std::vector<ServiceWebRequest> _requests;
 

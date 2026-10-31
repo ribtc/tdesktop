@@ -133,7 +133,19 @@ The scheduled dependency monitor remains advisory and does not implement fixes.
 
 ### Build Commands
 
-**From repository root, run:**
+**On macOS, from repository root, run:**
+
+```bash
+python3 Telegram/build/debug_build.py
+```
+
+This reuses `out/`, bounds build logs and Xcode description history, and removes
+recognized abandoned compiler/linker temporary files. For space reports,
+cleanup previews and IDE setup, read `docs/debug-build.md`. It preserves objects,
+precompiled headers, `out/Debug` and account folders; never replace it with an
+Xcode clean. The full-recompile recovery procedure below remains separate.
+
+**On native Windows or Linux, from repository root, run:**
 
 ```bash
 cmake --build out --config Debug --target Telegram

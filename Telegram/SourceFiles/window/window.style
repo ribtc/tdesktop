@@ -460,3 +460,28 @@ managementRowHeight: 64px;
 managementAvatarSize: 32px;
 managementWideTable: 680px;
 managementColumnWidth: 140px;
+
+protectionWideWidth: 780px;
+protectionStatusWidth: 320px;
+protectionSectionSkip: 16px;
+protectionCaptionPadding: margins(22px, 4px, 22px, 12px);
+managementProtectionIcon: icon {{ "menu/lock", windowSubTextFg }};
+
+protectionPadding: 22px;
+protectionHeaderHeight: 56px;
+protectionTitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(semiboldTextStyle) {
+		font: font(17px semibold);
+	}
+}
+protectionCaption: FlatLabel(defaultSubTextLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: font(12px);
+	}
+}
+protectionLink: LinkButton(defaultLinkButton) {
+	font: font(12px);
+	overFont: font(12px);
+}
+
+protectionDialogWidth: 480px;

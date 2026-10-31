@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
 
+#include "data/components/retained_messages.h"
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/components/ephemeral_messages.h"
@@ -824,6 +825,9 @@ void Histories::deleteMessages(
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
 		bool revoke) {
+	for (const auto &id : ids) {
+		session().retainedMessages().forget(FullMsgId(history->peer->id, id.v));
+	}
 	sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
 		const auto done = [=](const MTPmessages_AffectedMessages &result) {
 			session().api().applyAffectedMessages(history->peer, result);
@@ -850,6 +854,7 @@ void Histories::deleteAllMessages(
 		MsgId deleteTillId,
 		bool justClear,
 		bool revoke) {
+	session().retainedMessages().forget(history->peer->id);
 	sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
 		const auto peer = history->peer;
 		const auto chat = peer->asChat();
@@ -979,6 +984,7 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	base::flat_map<BusinessShortcutId, QVector<MTPint>> quickIdsByShortcut;
 	base::flat_set<not_null<DocumentData*>> savedMusic;
 	for (const auto &itemId : ids) {
+		session().retainedMessages().forget(itemId);
 		if (const auto item = _owner->message(itemId)) {
 			const auto history = item->history();
 			if (item->isSavedMusicItem()) {

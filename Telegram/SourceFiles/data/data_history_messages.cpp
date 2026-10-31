@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_history_messages.h"
 
+#include "data/components/retained_messages.h"
 #include "apiwrap.h"
 #include "data/data_changes.h"
 #include "data/data_chat.h"
@@ -55,7 +56,7 @@ struct HistoryMessagesAround {
 
 [[nodiscard]] std::vector<not_null<HistoryItem*>> HistoryClientSideMessages(
 		not_null<History*> history) {
-	auto result = std::vector<not_null<HistoryItem*>>();
+	auto result = history->session().retainedMessages().items(history);
 	for (const auto &item : history->clientSideMessages()) {
 		if (item->history() != history) {
 			continue;
@@ -188,6 +189,10 @@ void AppendHistoryClientSideMessages(
 			continue;
 		}
 		const auto date = item->date();
+		if (!dates.empty() && date > dates.back() && slice->skippedAfter != 0
+			&& history->session().retainedMessages().isRetained(item->fullId())) {
+			continue;
+		}
 		if (dates.empty()) {
 			dates.push_back(date);
 			slice->ids.push_back(item->fullId());
@@ -207,7 +212,7 @@ void AppendHistoryClientSideMessages(
 				if (dates[to - 1] > date) {
 					continue;
 				} else if (dates[to - 1] < date
-					|| IsServerMsgId(checkId)
+					|| (IsServerMsgId(checkId) && !IsServerMsgId(item->id))
 					|| checkId < item->id) {
 					break;
 				}

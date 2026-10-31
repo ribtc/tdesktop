@@ -122,7 +122,7 @@ void LoaderMtproto::setPriority(int priority) {
 	}
 }
 
-bool LoaderMtproto::readyToRequest() const {
+bool LoaderMtproto::readyToRequestImpl() const {
 	return !_requested.empty();
 }
 

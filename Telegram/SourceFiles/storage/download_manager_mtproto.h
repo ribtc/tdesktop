@@ -154,7 +154,7 @@ public:
 	[[nodiscard]] uint64 objectId() const;
 	[[nodiscard]] const Location &location() const;
 
-	[[nodiscard]] virtual bool readyToRequest() const = 0;
+	[[nodiscard]] bool readyToRequest() const;
 	void loadPart(int sessionIndex);
 	void removeSession(int sessionIndex);
 
@@ -206,6 +206,7 @@ private:
 
 	// Called only if readyToRequest() == true.
 	[[nodiscard]] virtual int64 takeNextRequestOffset() = 0;
+	[[nodiscard]] virtual bool readyToRequestImpl() const = 0;
 	virtual bool feedPart(int64 offset, const QByteArray &bytes) = 0;
 	virtual bool setWebFileSizeHook(int64 size);
 	virtual void cancelOnFail() = 0;
@@ -281,6 +282,7 @@ private:
 	base::flat_map<RequestData, QByteArray> _cdnUncheckedParts;
 	mtpRequestId _cdnHashesRequestId = 0;
 
+	bool _localOnlyFailureQueued = false;
 	rpl::lifetime _nonPremiumLimitSubscription;
 
 };

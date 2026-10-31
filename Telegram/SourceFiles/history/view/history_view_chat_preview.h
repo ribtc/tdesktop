@@ -21,6 +21,7 @@ namespace HistoryView {
 
 struct ChatPreviewAction {
 	FullMsgId openItemId;
+	bool openChat = false;
 	bool cancel = false;
 	bool openInfo = false;
 	bool markRead = false;
@@ -34,6 +35,7 @@ struct ChatPreview {
 
 [[nodiscard]] ChatPreview MakeChatPreview(
 	QWidget *parent,
-	not_null<Dialogs::Entry*> entry);
+	not_null<Dialogs::Entry*> entry,
+	bool unreadPreview = false);
 
 } // namespace HistoryView

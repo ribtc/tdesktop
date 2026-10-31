@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
 
+#include "data/components/retained_messages.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
@@ -3052,6 +3053,7 @@ bool Session::updateExistingMessage(const MTPDmessage &data) {
 }
 
 void Session::updateEditedMessage(const MTPMessage &data) {
+	_session->retainedMessages().remember(data, false);
 	const auto existing = data.match([](const MTPDmessageEmpty &)
 			-> HistoryItem* {
 		return nullptr;
@@ -3337,13 +3339,12 @@ void Session::processMessagesDeleted(
 		const QVector<MTPint> &data) {
 	const auto list = messagesList(peerId);
 	const auto affected = historyLoaded(peerId);
-	if (!list && !affected) {
-		return;
-	}
-
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	auto historiesToCheck = base::flat_set<not_null<History*>>();
 	for (const auto &messageId : data) {
+		if (_session->retainedMessages().retain(peerId, messageId.v)) {
+			continue;
+		}
 		const auto i = list ? list->find(messageId.v) : Messages::iterator();
 		if (list && i != list->end()) {
 			const auto history = i->second->history();
@@ -3370,6 +3371,9 @@ void Session::processNonChannelMessagesDeleted(const QVector<MTPint> &data) {
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	auto historiesToCheck = base::flat_set<not_null<History*>>();
 	for (const auto &messageId : data) {
+		if (_session->retainedMessages().retain(PeerId(), messageId.v)) {
+			continue;
+		}
 		if (const auto item = nonChannelMessage(messageId.v)) {
 			const auto history = item->history();
 			toDestroy.push_back(item);

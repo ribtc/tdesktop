@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
 
+#include "data/components/retained_messages.h"
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_blocked_peers.h"
@@ -1513,6 +1514,7 @@ void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
 void ApiWrap::deleteAllFromParticipant(
 		not_null<ChannelData*> channel,
 		not_null<PeerData*> from) {
+	_session->retainedMessages().forgetFrom(channel->id, from->id);
 	const auto history = _session->data().historyLoaded(channel);
 	const auto ids = history
 		? history->collectMessagesFromParticipantToDelete(from)

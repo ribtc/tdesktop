@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/download_manager_mtproto.h"
 
+#include "data/components/retained_messages.h"
 #include "mtproto/facade.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
@@ -594,12 +595,32 @@ bool DownloadMtprotoTask::setWebFileSizeHook(int64 size) {
 	return true;
 }
 
+bool DownloadMtprotoTask::readyToRequest() const {
+	return !_localOnlyFailureQueued && readyToRequestImpl();
+}
+
 void DownloadMtprotoTask::makeRequest(const RequestData &requestData) {
+	if (_localOnlyFailureQueued) {
+		return;
+	}
+	const auto origin = fileOrigin();
+	const auto id = std::get_if<Data::FileOriginMessage>(&origin.data);
+	if (id && api().session().retainedMessages().isRetained(*id)) {
+		_localOnlyFailureQueued = true;
+		crl::on_main(this, [=] {
+			cancelAllRequests();
+			removeFromQueue();
+			cancelOnFail();
+		});
+		return;
+	}
 	placeSentRequest(sendRequest(requestData), requestData);
 }
 
 void DownloadMtprotoTask::requestMoreCdnFileHashes() {
-	if (_cdnHashesRequestId || _cdnUncheckedParts.empty()) {
+	if (_localOnlyFailureQueued
+		|| _cdnHashesRequestId
+		|| _cdnUncheckedParts.empty()) {
 		return;
 	}
 

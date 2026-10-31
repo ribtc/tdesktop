@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 
+#include "data/components/retained_messages.h"
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
 #include "api/api_transcribes.h"
@@ -3805,7 +3806,7 @@ void HistoryItem::translationDone(
 }
 
 bool HistoryItem::canReact() const {
-	if (!isRegular()) {
+	if (history()->session().retainedMessages().isRetained(fullId()) || !isRegular()) {
 		return false;
 	} else if (isService()) {
 		return (_flags & MessageFlag::ReactionsAllowed);

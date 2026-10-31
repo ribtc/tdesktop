@@ -44,7 +44,8 @@ bool ChatPreviewManager::show(
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback,
 		QPointer<QWidget> parentOverride,
-		std::optional<QPoint> positionOverride) {
+		std::optional<QPoint> positionOverride,
+		bool unreadPreview) {
 	cancelScheduled();
 	_menu = nullptr;
 	_topicLifetime.destroy();
@@ -66,7 +67,7 @@ bool ChatPreviewManager::show(
 	const auto parent = parentOverride
 		? parentOverride
 		: _controller->content();
-	auto preview = HistoryView::MakeChatPreview(parent, row.key.entry());
+	auto preview = HistoryView::MakeChatPreview(parent, row.key.entry(), unreadPreview);
 	if (!preview.menu) {
 		return false;
 	}
@@ -82,6 +83,9 @@ bool ChatPreviewManager::show(
 				const auto itemId = action.openItemId;
 				const auto owner = &thread->owner();
 				if (action.cancel) {
+				} else if (action.openChat) {
+					MarkAsReadMenu::MarkAsReadThread(thread);
+					controller->showThread(thread);
 				} else if (action.markRead) {
 					MarkAsReadMenu::MarkAsReadThread(thread);
 				} else if (action.markUnread) {

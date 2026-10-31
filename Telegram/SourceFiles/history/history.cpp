@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history.h"
 
+#include "data/components/retained_messages.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_item_preview.h"
 #include "history/view/history_view_translate_tracker.h"
@@ -614,6 +615,7 @@ not_null<HistoryItem*> History::createItem(
 		MessageFlags localFlags,
 		bool detachExistingItem,
 		bool newMessage) {
+	session().retainedMessages().remember(message, !owner().message(peer, id));
 	owner().fillMessagePeers(peer->id, message);
 	if (const auto result = owner().message(peer, id)) {
 		if (detachExistingItem) {
@@ -755,6 +757,7 @@ void History::destroyMessage(not_null<HistoryItem*> item) {
 }
 
 void History::destroyMessagesByDates(TimeId minDate, TimeId maxDate) {
+	session().retainedMessages().forget(peer->id, minDate, maxDate);
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	toDestroy.reserve(_items.size());
 	for (const auto &message : _items) {
@@ -773,6 +776,7 @@ void History::destroyMessagesByDates(TimeId minDate, TimeId maxDate) {
 }
 
 void History::destroyMessagesByTopic(MsgId topicRootId) {
+	session().retainedMessages().forgetTopic(peer->id, topicRootId);
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	toDestroy.reserve(_items.size());
 	for (const auto &message : _items) {
@@ -4262,6 +4266,12 @@ void History::checkLocalMessages() {
 	const auto goodDate = [&](TimeId date) {
 		return (date >= firstDate && date < lastDate);
 	};
+	for (const auto item : session().retainedMessages().items(
+			this, firstDate, lastDate)) {
+		if (!item->mainView()) {
+			insertMessageToBlocks(item);
+		}
+	}
 	for (const auto &item : _clientSideMessages) {
 		if (!item->mainView() && goodDate(item->date())) {
 			insertMessageToBlocks(item);

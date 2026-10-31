@@ -671,6 +671,8 @@ PRIVATE
     data/components/recent_peers.h
     data/components/recent_shared_media_gifts.cpp
     data/components/recent_shared_media_gifts.h
+    data/components/retained_messages.cpp
+    data/components/retained_messages.h
     data/components/scheduled_messages.cpp
     data/components/scheduled_messages.h
     data/components/sponsored_messages.cpp
@@ -1554,6 +1556,8 @@ PRIVATE
     main/main_app_config_values.h
     main/main_domain.cpp
     main/main_domain.h
+    main/main_protection.cpp
+    main/main_protection.h
     main/main_session.cpp
     main/main_session.h
     main/main_session_settings.cpp
@@ -1943,6 +1947,8 @@ PRIVATE
     settings/cloud_password/settings_cloud_password_validate_icon.h
     settings/sections/settings_active_sessions.cpp
     settings/sections/settings_active_sessions.h
+    settings/sections/settings_protection.cpp
+    settings/sections/settings_protection.h
     settings/sections/settings_proxy_management.cpp
     settings/sections/settings_proxy_management.h
     settings/sections/settings_advanced.cpp

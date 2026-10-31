@@ -40,7 +40,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### accounts — accounts and sessions
 - Paths: `SourceFiles/main/`
-- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. `account_management` owns local account groups and tags keyed by session identity, filtering, pagination and explicit account selection. It must not own management widgets or network binding implementation.
+- The multi-account `Main::Domain`, each `Main::Account` with its MTP instance and local storage, the logged-in `Main::Session` that owns data, API and storage, per-session settings and the server `AppConfig`. `account_management` owns local account groups and tags keyed by session identity, filtering, pagination and explicit account selection. `main_protection` owns account-local protection preferences, trusted session hashes, pending alerts and bounded activity records. It must not own management widgets or network binding implementation.
 
 ### lang — localization
 - Paths: `SourceFiles/lang/`, `SourceFiles/countries/`
@@ -70,6 +70,7 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 
 ### data/components — per-session lists
 - Paths: `SourceFiles/data/components/`, `SourceFiles/main/session/send_as_peers*`, `SourceFiles/data/business/data_shortcut_messages*`, `SourceFiles/data/data_ai_compose_tones*`
+- `retained_messages` owns encrypted snapshots of received messages, remote deletion retention, expiry and restoration; history rendering and API session termination remain in their own areas.
 - Per-session services owned by `Main::Session` or `Data::Session`, each loading and caching one server list: scheduled, sponsored, business, quick-reply and ephemeral messages, fact-checks, recent and top peers, the Stars balance, gift auctions, passkeys, promo suggestions, AI compose tones and send-as peers. It must not own the screens that show them.
 
 ### history/model — message histories and messages

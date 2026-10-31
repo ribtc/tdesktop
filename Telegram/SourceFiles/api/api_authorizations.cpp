@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/changelogs.h"
 #include "core/core_settings.h"
 #include "lang/lang_keys.h"
+#include "data/data_session.h"
+#include "main/main_protection.h"
 #include "main/main_app_config.h"
 #include "main/main_session_settings.h"
 #include "main/main_session.h"
@@ -29,6 +31,8 @@ Authorizations::Entry ParseEntry(const MTPDauthorization &data) {
 
 	result.hash = data.is_current() ? 0 : data.vhash().v;
 	result.incomplete = data.is_password_pending();
+	result.createdTime = data.vdate_created().v;
+	result.unconfirmed = data.is_unconfirmed();
 	result.callsDisabled = data.is_call_requests_disabled();
 
 	const auto apiId = result.apiId = data.vapi_id().v;
@@ -86,7 +90,13 @@ Authorizations::Entry ParseEntry(const MTPDauthorization &data) {
 } // namespace
 
 Authorizations::Authorizations(not_null<ApiWrap*> api)
-: _api(&api->instance())
+: _session(&api->session())
+, _api(&api->instance())
+, _protectionTimer([=] {
+	if (_session->protection().settings().guardLogins) {
+		reload();
+	}
+})
 , _autoconfirmPeriod([=] {
 	constexpr auto kFallbackCount = 604800;
 	return api->session().appConfig().get<int>(
@@ -97,6 +107,14 @@ Authorizations::Authorizations(not_null<ApiWrap*> api)
 	api->session().settings().setUnreviewed(_unreviewed);
 	api->session().saveSettingsDelayed();
 }) {
+	crl::on_main(_session, [=] {
+		_session->protection().settingsChanges() | rpl::on_next([=] {
+			reconcileProtection();
+		}, _lifetime);
+		if (_session->protection().settings().guardLogins) {
+			reload();
+		}
+	});
 	_unreviewed = api->session().settings().unreviewed();
 	crl::on_main(&api->session(), [=] { removeExpiredUnreviewed(); });
 	Core::App().settings().deviceModelChanges(
@@ -119,6 +137,9 @@ Authorizations::Authorizations(not_null<ApiWrap*> api)
 }
 
 void Authorizations::reload() {
+	if (_session->protection().settings().guardLogins) {
+		_protectionTimer.callOnce(60 * 1000);
+	}
 	if (_requestId) {
 		return;
 	}
@@ -136,6 +157,7 @@ void Authorizations::reload() {
 		}) | ranges::to<List>;
 		removeExpiredUnreviewed();
 		refreshCallsDisabledHereFromCloud();
+		guardAuthorizations();
 		_listChanges.fire({});
 	}).fail([=] {
 		_requestId = 0;
@@ -165,6 +187,7 @@ void Authorizations::requestTerminate(
 			done(result);
 			if (mtpIsTrue(result)) {
 				if (hash) {
+					_session->protection().resolve(*hash);
 					_list.erase(
 						ranges::remove(_list, *hash, &Entry::hash),
 						end(_list));
@@ -356,6 +379,9 @@ rpl::producer<> Authorizations::unreviewedChanges() const {
 }
 
 void Authorizations::apply(const MTPUpdate &update) {
+	if (_session->protection().settings().guardLogins) {
+		reload();
+	}
 	removeExpiredUnreviewed();
 	update.match([&](const MTPDupdateNewAuthorization &data) {
 		auto unreviewed = Data::UnreviewedAuth{
@@ -396,6 +422,112 @@ void Authorizations::apply(const MTPUpdate &update) {
 	}, [](auto&&) {
 		Unexpected("Update in Authorizations::apply.");
 	});
+}
+
+void Authorizations::guardAuthorizations() {
+	auto &protection = _session->protection();
+	const auto settings = protection.settings();
+	auto resolved = std::vector<uint64>();
+	for (const auto &[hash, reason] : protection.pending()) {
+		if (ranges::none_of(_list, [=](const Entry &entry) {
+			return entry.hash == hash;
+		})) {
+			resolved.push_back(hash);
+		}
+	}
+	for (const auto hash : resolved) {
+		protection.resolve(hash);
+	}
+	if (!settings.guardLogins) {
+		return;
+	}
+	for (const auto &entry : _list) {
+		const auto hash = entry.hash;
+		if (protection.trusted(hash) || entry.incomplete) {
+			continue;
+		}
+		if (entry.createdTime < settings.loginSince && !entry.unconfirmed) {
+			continue;
+		}
+		if (!protection.pending().contains(hash)) {
+			const auto text = tr::lng_protection_login_detected(
+				tr::now,
+				lt_name,
+				entry.name);
+			protection.setPending(hash, text);
+			protection.record(text);
+			_session->data().serviceNotification(tr::marked(text));
+		}
+		if (!settings.terminateUnknown || _protectionRequests.contains(hash)
+			|| !_protectionAttempts.emplace(hash).second) {
+			continue;
+		}
+		const auto device = entry.name;
+		const auto requestId = _api.request(MTPaccount_ResetAuthorization(
+			MTP_long(hash)
+		)).done([=](const MTPBool &result) {
+			finishProtection(hash, device, mtpIsTrue(result));
+		}).fail([=](const MTP::Error &) {
+			finishProtection(hash, device, false);
+		}).send();
+		_protectionRequests.emplace(hash, requestId);
+	}
+}
+
+void Authorizations::reconcileProtection() {
+	const auto &protection = _session->protection();
+	const auto settings = protection.settings();
+	for (auto i = _protectionRequests.begin(); i != _protectionRequests.end();) {
+		if (!settings.guardLogins
+			|| !settings.terminateUnknown
+			|| protection.trusted(i->first)) {
+			_api.request(i->second).cancel();
+			i = _protectionRequests.erase(i);
+		} else {
+			++i;
+		}
+	}
+	_protectionAttempts.clear();
+	if (settings.guardLogins) {
+		reload();
+	} else {
+		_protectionTimer.cancel();
+	}
+}
+
+void Authorizations::finishProtection(
+		uint64 hash,
+		const QString &device,
+		bool success) {
+	if (!_protectionRequests.remove(hash)) {
+		return;
+	}
+	auto &protection = _session->protection();
+	if (!protection.settings().guardLogins
+		|| !protection.settings().terminateUnknown
+		|| protection.trusted(hash)) {
+		return;
+	} else if (!success) {
+		reportProtectionFailure(hash, device);
+		return;
+	}
+	protection.resolve(hash);
+	protection.record(tr::lng_protection_login_terminated(tr::now, lt_name, device));
+	_list.erase(ranges::remove(_list, hash, &Entry::hash), end(_list));
+	_listChanges.fire({});
+}
+
+void Authorizations::reportProtectionFailure(
+		uint64 hash,
+		const QString &device) {
+	const auto text = tr::lng_protection_login_failed(
+		tr::now,
+		lt_name,
+		device);
+	auto &protection = _session->protection();
+	protection.setPending(hash, text);
+	protection.record(text);
+	_session->data().serviceNotification(tr::marked(text));
 }
 
 } // namespace Api

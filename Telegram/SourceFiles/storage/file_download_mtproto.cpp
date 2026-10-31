@@ -127,7 +127,7 @@ uint64 mtpFileLoader::objId() const {
 	return DownloadMtprotoTask::objectId();
 }
 
-bool mtpFileLoader::readyToRequest() const {
+bool mtpFileLoader::readyToRequestImpl() const {
 	return !_finished
 		&& !_lastComplete
 		&& (_fullSize != 0 || !haveSentRequests())

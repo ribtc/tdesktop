@@ -27,7 +27,8 @@ public:
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback = nullptr,
 		QPointer<QWidget> parentOverride = nullptr,
-		std::optional<QPoint> positionOverride = {});
+		std::optional<QPoint> positionOverride = {},
+		bool unreadPreview = false);
 	bool schedule(
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback = nullptr,

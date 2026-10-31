@@ -4136,12 +4136,14 @@ bool SessionController::showChatPreview(
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback,
 		QPointer<QWidget> parentOverride,
-		std::optional<QPoint> positionOverride) {
+		std::optional<QPoint> positionOverride,
+		bool unreadPreview) {
 	return _chatPreviewManager->show(
 		std::move(row),
 		std::move(callback),
 		std::move(parentOverride),
-		positionOverride);
+		positionOverride,
+		unreadPreview);
 }
 
 bool SessionController::scheduleChatPreview(

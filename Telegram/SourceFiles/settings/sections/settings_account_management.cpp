@@ -27,6 +27,7 @@
 #include "ui/userpic_view.h"
 #include "window/window_controller.h"
 
+#include "styles/style_layers.h"
 #include "styles/style_window.h"
 
 namespace Settings {
@@ -53,7 +54,8 @@ Main::AccountStatus Status(not_null<Main::Account*> account) {
 	case MTP::NetworkState::Ready: return Main::AccountStatus::Ready;
 	case MTP::NetworkState::Checking: return Main::AccountStatus::Checking;
 	case MTP::NetworkState::Failed: return Main::AccountStatus::Failed;
-	default: return Main::AccountStatus::Unbound;
+	default: return account->network().snapshot().allowed()
+		? Main::AccountStatus::Direct : Main::AccountStatus::Unbound;
 	}
 }
 
@@ -63,6 +65,7 @@ QString StatusText(Main::AccountStatus status) {
 	case Main::AccountStatus::Checking: return tr::lng_management_checking(tr::now);
 	case Main::AccountStatus::Failed: return tr::lng_management_failed(tr::now);
 	case Main::AccountStatus::Unbound: return tr::lng_management_unbound(tr::now);
+	case Main::AccountStatus::Direct: return tr::lng_management_direct(tr::now);
 	}
 	Unexpected("Account status");
 }
@@ -142,8 +145,11 @@ public:
 		QWidget *parent,
 		not_null<Main::Account*> account,
 		const Main::AccountMetadata &metadata,
+		int number,
 		bool selected,
 		Fn<void()> toggle,
+		Fn<void()> open,
+		Fn<void()> bind,
 		Fn<void()> actions);
 
 protected:
@@ -151,6 +157,7 @@ protected:
 
 private:
 	base::weak_ptr<Main::Account> _account;
+	int _number = 0;
 	QString _group;
 	QString _tags;
 	Ui::PeerUserpicView _userpic;
@@ -169,34 +176,46 @@ private:
 	void layout();
 	void save();
 	void groupMenu(bool assign);
-	void showGroupFilterMenu();
+	void showTagFilterMenu();
 	void showStatusFilterMenu();
 	void moveToGroup(QString group, const std::vector<AccountTarget> &targets);
 	bool readMetadata();
 	void editGroup(QString id = {});
 	void rowMenu(QString id);
-	void editTags(QString id);
-	void bindMenu();
+	void editTags(QStringList ids);
+	void openAccount(QString id);
+	void logoutAccount(QString id);
+	void bindMenu(QStringList ids);
 	void confirmBinding(QString proxy, QStringList ids);
-	void showResults(QStringList results);
 	void editText(QString title, QString value, Fn<bool(QString)> save);
-	Ui::LinkButton *button(QString text, Fn<void()> callback);
+	Ui::RoundButton *button(
+		QString text,
+		Fn<void()> callback,
+		const style::RoundButton &st = st::managementButton);
 
 	const not_null<Window::Controller*> _controller;
 	object_ptr<Ui::FlatLabel> _title;
+	object_ptr<Ui::FlatLabel> _subtitle;
+	object_ptr<Ui::RpWidget> _header;
+	Ui::Checkbox *_selectPage = nullptr;
+	object_ptr<Ui::InputField> _number;
 	object_ptr<Ui::InputField> _search;
 	object_ptr<Ui::ScrollArea> _scroll;
 	object_ptr<Ui::RpWidget> _rows = { nullptr };
 	object_ptr<Ui::FlatLabel> _summary;
+	object_ptr<Ui::FlatLabel> _pageNumber;
 	base::unique_qptr<Ui::PopupMenu> _menu;
-	Ui::LinkButton *_groupFilter = nullptr;
-	Ui::LinkButton *_statusFilter = nullptr;
-	Ui::LinkButton *_moveSelection = nullptr;
-	Ui::LinkButton *_bindSelection = nullptr;
-	std::vector<Ui::LinkButton*> _tools;
-	std::vector<Ui::LinkButton*> _selectionTools;
-	std::vector<Ui::LinkButton*> _paging;
-	std::vector<Ui::LinkButton*> _compactTools;
+	Ui::RoundButton *_tagFilter = nullptr;
+	Ui::RoundButton *_statusFilter = nullptr;
+	Ui::RoundButton *_add = nullptr;
+	Ui::RoundButton *_import = nullptr;
+	Ui::RoundButton *_selectAll = nullptr;
+	Ui::RoundButton *_clearSelection = nullptr;
+	Ui::RoundButton *_tagsSelection = nullptr;
+	Ui::RoundButton *_selectionMenu = nullptr;
+	Ui::RoundButton *_moveSelection = nullptr;
+	Ui::RoundButton *_bindSelection = nullptr;
+	std::vector<Ui::RoundButton*> _paging;
 	std::vector<Main::ManagedAccount> _accounts;
 	Main::AccountMetadata _metadata;
 	Main::AccountQuery _query;
@@ -212,29 +231,62 @@ AccountRow::AccountRow(
 	QWidget *parent,
 	not_null<Main::Account*> account,
 	const Main::AccountMetadata &metadata,
+	int number,
 	bool selected,
 	Fn<void()> toggle,
+	Fn<void()> open,
+	Fn<void()> bind,
 	Fn<void()> actions)
 : RpWidget(parent)
 , _account(base::make_weak(account.get()))
-, _group(metadata.groups().value(metadata.group(Identity(account)),
-	tr::lng_management_ungrouped(tr::now)))
+, _number(number)
+, _group(metadata.groups().value(metadata.group(Identity(account))))
 , _tags(metadata.tags(Identity(account)).join(u", "_q))
 , _selected(selected) {
-	resize(width(), st::managementRowHeight);
-	const auto check = Ui::CreateChild<Ui::Checkbox>(this, QString(), selected);
+	resize(width(), st::accountLibraryRowHeight);
+	const auto binding = Core::App().settings().proxyLibrary().find(account->proxyBindingId());
+	setToolTip(QString::number(_number) + u" · "_q + _group
+		+ u"\n"_q + _tags + u"\n"_q
+		+ (binding ? binding->proxy.host : (Status(account) == Main::AccountStatus::Direct
+			? tr::lng_management_direct(tr::now)
+			: tr::lng_management_status_unbound(tr::now)))
+		+ u"\n"_q + StatusText(Status(account)));
+	const auto check = Ui::CreateChild<Ui::Checkbox>(this, QString(), selected,
+		st::managementTableCheckbox, st::managementTableCheck);
 	check->setAccessibleName(account->session().user()->name());
 	check->checkedChanges() | rpl::on_next([=](bool checked) {
 		_selected = checked;
 		toggle();
 		update();
 	}, lifetime());
-	const auto menu = Ui::CreateChild<Ui::LinkButton>(this, u"⋯"_q);
+	const auto menu = Ui::CreateChild<Ui::LinkButton>(this, u"⋯"_q, st::managementLink);
 	menu->setAccessibleName(tr::lng_management_actions(tr::now));
 	menu->setClickedCallback(std::move(actions));
+	const auto activate = Ui::CreateChild<Ui::LinkButton>(
+		this,
+		tr::lng_management_activate(tr::now),
+		st::managementLink);
+	activate->setClickedCallback(std::move(open));
+	const auto proxy = Ui::CreateChild<Ui::LinkButton>(
+		this,
+		tr::lng_management_proxy_action(tr::now),
+		st::managementLink);
+	proxy->setClickedCallback(std::move(bind));
 	sizeValue() | rpl::on_next([=](QSize size) {
-		check->move(st::managementGap, (size.height() - check->height()) / 2);
-		menu->move(size.width() - st::managementPadding, (size.height() - menu->height()) / 2);
+		const auto pad = st::managementTablePadding;
+		check->move(pad, (size.height() - check->height()) / 2);
+		menu->move(
+			size.width() - pad - menu->width(),
+			(size.height() - menu->height()) / 2);
+		const auto wide = size.width() >= st::accountLibraryWideTable;
+		activate->setVisible(wide);
+		proxy->setVisible(wide);
+		activate->move(
+			menu->x() - st::managementGap - activate->width(),
+			(size.height() - activate->height()) / 2);
+		proxy->move(
+			activate->x() - st::managementGap - proxy->width(),
+			(size.height() - proxy->height()) / 2);
 	}, lifetime());
 }
 
@@ -245,36 +297,101 @@ void AccountRow::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	auto p = Painter(this);
-	p.fillRect(e->rect(), _selected ? st::windowBgOver : st::windowBg);
-	const auto pad = st::managementPadding;
+	p.fillRect(e->rect(), _selected ? st::lightButtonBgOver : st::windowBg);
+	const auto pad = st::managementTablePadding;
 	const auto size = st::managementAvatarSize;
-	const auto left = pad * 2;
-	session->user()->paintUserpicLeft(p, _userpic, left, (height() - size) / 2, width(), size);
-	const auto textLeft = left + size + st::managementGap;
-	const auto wide = width() >= st::managementWideTable;
-	const auto column = wide ? st::managementColumnWidth : 0;
-	const auto textWidth = std::max(0, width() - textLeft - 2 * pad - 2 * column);
-	p.setFont(st::normalFont);
+	const auto wide = width() >= st::accountLibraryWideTable;
+	const auto numberLeft = pad + st::managementCheckWidth + st::managementGap;
+	const auto left = numberLeft + st::accountLibraryNumberWidth;
+	const auto actionsLeft = width() - pad - st::accountLibraryActionsWidth;
+	const auto proxyLeft = actionsLeft - st::accountLibraryProxyWidth;
+	const auto tagsLeft = proxyLeft - st::accountLibraryTagsWidth;
+	const auto usernameLeft = tagsLeft - st::accountLibraryUsernameWidth;
+	const auto textRight = wide ? usernameLeft : width() - st::managementActionWidth;
+	const auto showUserpic = textRight - left - pad >= 2 * (size + st::managementGap);
+	if (showUserpic) {
+		session->user()->paintUserpicLeft(
+			p,
+			_userpic,
+			left,
+			(height() - size) / 2,
+			width(),
+			size);
+	}
+	const auto textLeft = left + (showUserpic ? size + st::managementGap : 0);
+	const auto textWidth = std::max(
+		0,
+		textRight - textLeft - pad);
+	const auto top = (height() - (wide ? 2 : 3) * st::managementTableFont->height) / 2;
+	p.setFont(st::managementNameFont);
 	p.setPen(st::windowFg);
-	p.drawText(textLeft, pad, st::normalFont->elided(session->user()->name(), textWidth));
-	p.setFont(st::normalFont);
-	p.setPen(st::windowSubTextFg);
-	const auto details = session->user()->phone() + u"  "_q + _tags;
-	p.drawText(textLeft, pad + st::normalFont->height, st::normalFont->elided(details, textWidth));
-	const auto state = StatusText(Status(account));
-	p.drawText(
+	p.drawTextLeft(
 		textLeft,
-		pad + 2 * st::normalFont->height,
-		st::normalFont->elided(state, textWidth));
-	if (wide) {
-		p.drawText(width() - 2 * column - pad, height() / 2,
-			st::normalFont->elided(_group, column - st::managementGap));
+		top,
+		width(),
+		st::managementNameFont->elided(session->user()->name(), textWidth));
+	p.setFont(st::managementTableFont);
+	p.setPen(st::windowSubTextFg);
+	const auto details = session->user()->phone();
+	p.drawTextLeft(
+		textLeft,
+		top + st::managementTableFont->height,
+		width(),
+		st::managementTableFont->elided(details, textWidth));
+	const auto y = (height() - st::managementTableFont->height) / 2;
+	p.drawTextLeft(
+		numberLeft,
+		y,
+		width(),
+		st::managementTableFont->elided(
+			QString::number(_number),
+			st::accountLibraryNumberWidth - pad));
+	const auto labels = _group.isEmpty() ? _tags
+		: _tags.isEmpty() ? _group : _group + u", "_q + _tags;
+	if (!wide) {
 		const auto proxy = Core::App().settings().proxyLibrary().find(account->proxyBindingId());
-		const auto label = proxy ? proxy->proxy.host : tr::lng_management_unbound(tr::now);
-		p.drawText(width() - column - pad, height() / 2,
-			st::normalFont->elided(label, column - st::managementGap));
+		const auto route = proxy ? proxy->proxy.host : (Status(account) == Main::AccountStatus::Direct
+			? tr::lng_management_direct(tr::now)
+			: tr::lng_management_status_unbound(tr::now));
+		p.drawTextLeft(
+			textLeft,
+			top + 2 * st::managementTableFont->height,
+			width(),
+			st::managementTableFont->elided(route + u" · "_q + labels, textWidth));
+	}
+	if (wide) {
+		const auto username = session->user()->username();
+		p.drawTextLeft(
+			usernameLeft,
+			y,
+			width(),
+			st::managementTableFont->elided(
+				username.isEmpty() ? u"—"_q : u"@"_q + username,
+				st::accountLibraryUsernameWidth - pad));
+		p.drawTextLeft(
+			tagsLeft,
+			y,
+			width(),
+			st::managementTableFont->elided(
+				labels.isEmpty() ? u"—"_q : labels,
+				st::accountLibraryTagsWidth - pad));
+		const auto proxy = Core::App().settings().proxyLibrary().find(account->proxyBindingId());
+		const auto label = proxy ? proxy->proxy.host
+			: (Status(account) == Main::AccountStatus::Direct
+			? tr::lng_management_direct(tr::now)
+			: tr::lng_management_status_unbound(tr::now));
+		p.setPen(proxy ? st::windowActiveTextFg
+			: Status(account) == Main::AccountStatus::Direct ? st::windowSubTextFg
+			: st::attentionButtonFg);
+		p.drawTextLeft(
+			proxyLeft,
+			y,
+			width(),
+			st::managementTableFont->elided(label, st::accountLibraryProxyWidth - pad));
 	}
 	p.fillRect(0, height() - st::lineWidth, width(), st::lineWidth, st::shadowFg);
+	p.fillRect(0, 0, st::lineWidth, height(), st::shadowFg);
+	p.fillRect(width() - st::lineWidth, 0, st::lineWidth, height(), st::shadowFg);
 }
 
 AccountManagement::AccountManagement(
@@ -282,76 +399,141 @@ AccountManagement::AccountManagement(
 	not_null<Window::Controller*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _title(this, tr::lng_management_accounts(), st::defaultFlatLabel)
-, _search(this, st::defaultInputField, tr::lng_management_search())
+, _title(this, tr::lng_management_library(), st::managementTitle)
+, _subtitle(this, QString(), st::managementCaption)
+, _header(this)
+, _number(this, st::accountLibraryNumberSearch, tr::lng_management_number())
+, _search(this, st::managementSearch, tr::lng_management_search())
 , _scroll(this, st::defaultScrollArea)
-, _summary(this, QString(), st::defaultFlatLabel) {
+, _summary(this, QString(), st::managementCaption)
+, _pageNumber(this, QString(), st::managementCaption) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setFocusProxy(_search);
 	paintRequest() | rpl::on_next([=](QRect clip) {
 		auto p = QPainter(this);
 		p.fillRect(clip, st::windowBg);
+		p.fillRect(
+			0,
+			st::accountLibraryHeaderHeight - st::lineWidth,
+			width(),
+			st::lineWidth,
+			st::shadowFg);
 	}, lifetime());
-	_tools.push_back(button(tr::lng_management_add(tr::now), [=] {
-		_menu = base::make_unique_q<Ui::PopupMenu>(this);
-		_menu->addAction(tr::lng_management_add(tr::now), [=] {
-			const auto environment = _controller->account().mtp().isTestMode()
-				? MTP::Environment::Test : MTP::Environment::Production;
-			Core::App().domain().addActivated(environment);
-		});
-		_menu->addAction(tr::lng_session_login(tr::now), [=] {
-			Intro::ChooseSessionFiles(
-				this,
-				&_controller->account(),
-				_controller->uiShow());
-		});
-		_menu->popup(QCursor::pos());
-	}));
-	_tools.push_back(button(tr::lng_management_groups(tr::now), [=] { groupMenu(false); }));
-	_groupFilter = button(tr::lng_management_filter_group(tr::now), [=] {
-		showGroupFilterMenu();
+	_add = button(tr::lng_management_add(tr::now), [=] {
+		const auto environment = _controller->account().mtp().isTestMode()
+			? MTP::Environment::Test : MTP::Environment::Production;
+		Core::App().domain().addActivated(environment);
+	}, st::managementPrimaryButton);
+	_import = button(tr::lng_management_import(tr::now), [=] {
+		Intro::ChooseSessionFiles(
+			this,
+			&_controller->account(),
+			_controller->uiShow());
+	});
+	_tagFilter = button(tr::lng_management_filter_tags(tr::now), [=] {
+		showTagFilterMenu();
 	});
 	_statusFilter = button(tr::lng_management_filter_status(tr::now), [=] {
 		showStatusFilterMenu();
 	});
-	_tools.push_back(_groupFilter);
-	_tools.push_back(_statusFilter);
-	_selectionTools.push_back(button(tr::lng_management_select_page(tr::now), [=] {
-		_selection.select(_page.ids); rebuildRows();
-	}));
-	_selectionTools.push_back(button(tr::lng_management_select_all(tr::now), [=] {
-		_selection.select(_page.matching); rebuildRows();
-	}));
-	_selectionTools.push_back(button(tr::lng_management_clear(tr::now), [=] {
-		_selection.clear(); rebuildRows();
-	}));
-	_moveSelection = button(tr::lng_management_move(tr::now), [=] { groupMenu(true); });
-	_bindSelection = button(tr::lng_management_bind(tr::now), [=] { bindMenu(); });
-	_selectionTools.push_back(_moveSelection);
-	_selectionTools.push_back(_bindSelection);
-	_paging.push_back(button(tr::lng_management_previous(tr::now), [=] {
-		--_query.page; rebuildRows();
-	}));
-	_paging.push_back(button(tr::lng_management_next(tr::now), [=] {
-		++_query.page; rebuildRows();
-	}));
-	for (const auto selection : { false, true }) {
-		_compactTools.push_back(button(selection
-			? tr::lng_management_selection(tr::now)
-			: tr::lng_management_actions(tr::now), [=] {
-			_menu = base::make_unique_q<Ui::PopupMenu>(this);
-			const auto &buttons = selection ? _selectionTools : _tools;
-			for (const auto button : buttons) {
-				if (button->isDisabled()) continue;
-				_menu->addAction(button->accessibilityName(), [=] {
+	_selectAll = button(tr::lng_management_select_all(tr::now), [=] {
+		_selection.select(_page.matching);
+		rebuildRows();
+	});
+	_clearSelection = button(tr::lng_management_clear(tr::now), [=] {
+		_selection.clear();
+		rebuildRows();
+	});
+	_tagsSelection = button(tr::lng_management_tags_column(tr::now), [=] {
+		editTags(_selection.freeze());
+	});
+	_moveSelection = button(tr::lng_management_move(tr::now), [=] {
+		groupMenu(true);
+	});
+	_bindSelection = button(tr::lng_management_bind(tr::now), [=] {
+		bindMenu(_selection.freeze());
+	});
+	_selectionMenu = button(tr::lng_management_actions(tr::now), [=] {
+		_menu = base::make_unique_q<Ui::PopupMenu>(this);
+		for (const auto tool : { _tagsSelection, _moveSelection,
+				_bindSelection, _selectAll, _clearSelection }) {
+			if (!tool->isDisabled()) {
+				_menu->addAction(tool->accessibilityName(), [=] {
 					Ui::PostponeCall(this, [=] {
-						button->clicked(Qt::NoModifier, Qt::LeftButton);
+						tool->clicked(Qt::NoModifier, Qt::LeftButton);
 					});
 				});
 			}
-			_menu->popup(QCursor::pos());
-		}));
-	}
+		}
+		_menu->addAction(tr::lng_management_groups(tr::now), [=] {
+			Ui::PostponeCall(this, [=] { groupMenu(false); });
+		});
+		_menu->popup(QCursor::pos());
+	});
+	_paging.push_back(button(u"‹"_q, [=] {
+		--_query.page;
+		rebuildRows();
+	}));
+	_paging.push_back(button(u"›"_q, [=] {
+		++_query.page;
+		rebuildRows();
+	}));
+	_paging[0]->setAccessibleName(tr::lng_management_previous(tr::now));
+	_paging[1]->setAccessibleName(tr::lng_management_next(tr::now));
+	_selectPage = Ui::CreateChild<Ui::Checkbox>(_header.data(), QString(), false,
+		st::managementTableCheckbox, st::managementTableCheck);
+	_selectPage->setAccessibleName(tr::lng_management_select_page(tr::now));
+	_selectPage->checkedChanges() | rpl::on_next([=](bool checked) {
+		for (const auto &id : _page.ids) {
+			if (_selection.contains(id) != checked) {
+				_selection.toggle(id);
+			}
+		}
+		rebuildRows();
+	}, lifetime());
+	_header->paintRequest() | rpl::on_next([=] {
+		auto p = Painter(_header);
+		p.fillRect(_header->rect(), st::windowBgOver);
+		p.setFont(st::managementTableFont);
+		p.setPen(st::windowSubTextFg);
+		const auto pad = st::managementTablePadding;
+		const auto y = (_header->height() - st::managementTableFont->height) / 2;
+		const auto wide = _header->width() >= st::accountLibraryWideTable;
+		const auto number = pad + st::managementCheckWidth + st::managementGap;
+		p.drawTextLeft(number, y, _header->width(), tr::lng_management_number(tr::now));
+		p.drawTextLeft(
+			number + st::accountLibraryNumberWidth,
+			y,
+			_header->width(),
+			tr::lng_management_account_column(tr::now));
+		if (wide) {
+			const auto actions = _header->width() - pad - st::accountLibraryActionsWidth;
+			const auto proxy = actions - st::accountLibraryProxyWidth;
+			const auto tags = proxy - st::accountLibraryTagsWidth;
+			p.drawTextLeft(
+				tags - st::accountLibraryUsernameWidth,
+				y,
+				_header->width(),
+				tr::lng_proxy_box_username(tr::now));
+			p.drawTextLeft(tags, y, _header->width(), tr::lng_management_tags_column(tr::now));
+			p.drawTextLeft(proxy, y, _header->width(), tr::lng_management_proxy_column(tr::now));
+			p.drawTextLeft(actions, y, _header->width(), tr::lng_management_actions(tr::now));
+		}
+	}, lifetime());
+
+	const auto searchIcon = Ui::CreateChild<Ui::RpWidget>(_search.data());
+	searchIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+	searchIcon->resize(st::managementSearchHeight, st::managementSearchHeight);
+	searchIcon->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(searchIcon);
+		st::managementSearchIcon.paintInCenter(p, searchIcon->rect());
+	}, searchIcon->lifetime());
+
+	_number->changes() | rpl::on_next([=] {
+		_query.number = _number->getLastText().trimmed();
+		_query.page = 0;
+		rebuildRows();
+	}, lifetime());
 	_search->changes() | rpl::on_next([=] {
 		_query.search = _search->getLastText();
 		_query.page = 0;
@@ -359,11 +541,16 @@ AccountManagement::AccountManagement(
 	}, lifetime());
 	Core::App().domain().accountsChanges() | rpl::on_next([=] { scheduleRefresh(); }, lifetime());
 	sizeValue() | rpl::on_next([=] { layout(); }, lifetime());
+	style::PaletteChanged() | rpl::on_next([=] { layout(); }, lifetime());
 	refresh();
 }
 
-Ui::LinkButton *AccountManagement::button(QString text, Fn<void()> callback) {
-	const auto result = Ui::CreateChild<Ui::LinkButton>(this, text);
+Ui::RoundButton *AccountManagement::button(
+		QString text,
+		Fn<void()> callback,
+		const style::RoundButton &st) {
+	const auto result = Ui::CreateChild<Ui::RoundButton>(this, rpl::single(text), st);
+	result->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	result->setClickedCallback(std::move(callback));
 	return result;
 }
@@ -383,7 +570,8 @@ void AccountManagement::refresh() {
 	readMetadata();
 	_accountsLifetime.destroy();
 	_accounts.clear();
-	for (const auto account : Core::App().domain().orderedAccounts()) {
+	for (const auto &entry : Core::App().domain().accounts()) {
+		const auto account = entry.account.get();
 		account->sessionChanges() | rpl::on_next([=] { scheduleRefresh(); }, _accountsLifetime);
 		account->network().changes() | rpl::on_next([=] { scheduleRefresh(); }, _accountsLifetime);
 		const auto session = account->maybeSession();
@@ -391,13 +579,21 @@ void AccountManagement::refresh() {
 			continue;
 		}
 		_accounts.push_back({ Identity(account), session->user()->name(),
-			session->user()->phone(), Status(account) });
+			session->user()->phone(), Status(account),
+			entry.index + 1, session->user()->username() });
 		session->changes().peerUpdates(
 			session->user(),
 			Data::PeerUpdate::Flag::Name | Data::PeerUpdate::Flag::Photo
+				| Data::PeerUpdate::Flag::Username | Data::PeerUpdate::Flag::PhoneNumber
 		) | rpl::on_next([=] {
 			scheduleRefresh();
 		}, _accountsLifetime);
+	}
+	ranges::sort(_accounts, std::greater<>(), &Main::ManagedAccount::number);
+	for (const auto &id : _selection.freeze()) {
+		if (!FindAccount(id)) {
+			_selection.toggle(id);
+		}
 	}
 	rebuildRows();
 }
@@ -405,106 +601,161 @@ void AccountManagement::refresh() {
 void AccountManagement::rebuildRows() {
 	_page = Main::QueryAccounts(_accounts, _metadata, _query);
 	_query.page = _page.page;
-	_groupFilter->setText(_query.group
+	_tagFilter->setText(rpl::single(_query.tag.value_or(_query.group
 		? _metadata.groups().value(*_query.group, tr::lng_management_ungrouped(tr::now))
-		: tr::lng_management_filter_group(tr::now));
-	_statusFilter->setText(_query.status ? StatusText(*_query.status)
-		: tr::lng_management_filter_status(tr::now));
+		: tr::lng_management_filter_tags(tr::now))));
+	_statusFilter->setText(rpl::single(_query.status ? StatusText(*_query.status)
+		: tr::lng_management_filter_status(tr::now)));
 	_rows = object_ptr<Ui::RpWidget>(this);
 	const auto rows = _rows.data();
 	const auto empty = _page.ids.isEmpty();
 	rows->paintRequest() | rpl::on_next([=](QRect clip) {
 		auto p = Painter(rows);
 		p.fillRect(clip, st::windowBg);
-		p.setFont(st::normalFont);
-		p.setPen(st::windowSubTextFg);
-		const auto pad = st::managementPadding;
-		p.drawText(pad, pad, tr::lng_management_account_column(tr::now));
-		if (rows->width() >= st::managementWideTable) {
-			p.drawText(rows->width() - 2 * st::managementColumnWidth - pad, pad,
-				tr::lng_management_group_column(tr::now));
-			p.drawText(rows->width() - st::managementColumnWidth - pad, pad,
-				tr::lng_management_proxy_column(tr::now));
-		}
 		if (empty) {
-			p.drawText(pad, st::managementControlHeight + pad,
-				st::normalFont->elided(tr::lng_management_empty(tr::now), rows->width() - 2 * pad));
+			p.setFont(st::managementTableFont);
+			p.setPen(st::windowSubTextFg);
+			p.drawTextLeft(st::managementPadding, st::managementPadding, rows->width(),
+				st::managementTableFont->elided(tr::lng_management_empty(tr::now), rows->width() - 2 * st::managementPadding));
 		}
 	}, rows->lifetime());
 	for (auto i = 0; i != _page.ids.size(); ++i) {
 		const auto id = _page.ids[i];
 		if (const auto account = FindAccount(id)) {
-			const auto row = Ui::CreateChild<AccountRow>(_rows.data(), account, _metadata,
-				_selection.contains(id), [=] { _selection.toggle(id); layout(); },
+			const auto entry = ranges::find(_accounts, id, &Main::ManagedAccount::id);
+			const auto row = Ui::CreateChild<AccountRow>(
+				_rows.data(),
+				account,
+				_metadata,
+				entry->number,
+				_selection.contains(id),
+				[=] { _selection.toggle(id); layout(); },
+				[=] { openAccount(id); },
+				[=] { bindMenu({ id }); },
 				[=] { rowMenu(id); });
-			row->move(0, st::managementControlHeight + i * st::managementRowHeight);
+			row->move(0, i * st::accountLibraryRowHeight);
 			_rows->widthValue() | rpl::on_next([=](int width) {
-				row->resize(width, st::managementRowHeight);
+				row->resize(width, st::accountLibraryRowHeight);
 			}, row->lifetime());
 		}
 	}
-	_rows->resize(width(), st::managementControlHeight
-		+ std::max(1, int(_page.ids.size())) * st::managementRowHeight);
+	_rows->resize(width(), std::max(1, int(_page.ids.size())) * st::accountLibraryRowHeight);
 	_scroll->setOwnedWidget(std::move(_rows));
 	layout();
 }
 
 void AccountManagement::layout() {
 	const auto pad = st::managementPadding;
+	const auto gap = st::managementGap;
 	const auto available = std::max(1, width() - 2 * pad);
-	auto y = pad;
-	_title->move(pad, y);
-	_title->resizeToWidth(available);
-	y += _title->height() + st::managementGap;
-	const auto place = [&](const std::vector<Ui::LinkButton*> &buttons) {
-		auto x = pad;
-		for (const auto button : buttons) {
-			button->resizeToWidth(std::min(available, button->naturalWidth()));
-			if (x > pad && x + button->width() > width() - pad) {
-				x = pad;
-				y += st::managementControlHeight;
-			}
-			button->move(x, y);
-			x += button->width() + st::managementGap;
+	const auto compact = available < st::accountLibraryWideTable;
+	const auto selected = _selection.freeze().size();
+	_tagFilter->setFullWidth(std::min(
+		st::accountLibraryFilterWidth,
+		std::max(1, (available - gap) / 2)));
+	_statusFilter->setFullWidth(_tagFilter->width());
+	_title->move(pad, gap);
+	_subtitle->setText(selected
+		? tr::lng_management_selected_count(tr::now, lt_amount, QString::number(selected))
+		: tr::lng_management_subtitle(tr::now, lt_amount, QString::number(_accounts.size())));
+	_subtitle->setTextColorOverride(selected ? st::windowActiveTextFg->c : st::windowSubTextFg->c);
+	_subtitle->resizeToWidth(available);
+	_subtitle->move(pad, gap + _title->height() + gap / 2);
+	auto right = width() - pad;
+	for (const auto tool : { _selectionMenu, _clearSelection,
+			_bindSelection, _tagsSelection }) {
+		const auto menu = (tool == _selectionMenu);
+		tool->setVisible(menu || (!compact && selected));
+		tool->setDisabled(!menu && !selected);
+		if (!tool->isHidden()) {
+			right -= tool->width();
+			tool->move(right, (st::accountLibraryHeaderHeight - tool->height()) / 2);
+			right -= gap / 2;
 		}
-		y += st::managementControlHeight;
-	};
-	const auto compact = available < st::managementWideTable;
-	for (const auto button : _compactTools) button->setVisible(compact);
-	for (const auto button : _tools) button->setVisible(!compact);
-	for (const auto button : _selectionTools) button->setVisible(!compact);
-	place(compact ? _compactTools : _tools);
-	_search->resizeToWidth(available);
-	_search->move(pad, y);
-	y += _search->height() + st::managementGap;
-	if (!compact) place(_selectionTools);
-	_summary->setText(tr::lng_management_summary(
-		tr::now,
-		lt_amount,
-		QString::number(_page.total),
-		lt_selected,
-		QString::number(_selection.freeze().size()),
-		lt_current,
-		QString::number(_page.page + 1),
-		lt_total,
-		QString::number(_page.pages)));
-	_summary->resizeToWidth(available);
-	_summary->move(pad, y);
-	y += _summary->height() + st::managementGap;
-	_scroll->setGeometry(pad, y, available,
-		std::max(0, height() - y - pad - st::managementControlHeight));
-	if (const auto content = _scroll->widget()) {
-		content->resize(available, content->height());
 	}
-	y = height() - st::managementControlHeight;
-	_paging[0]->setText(compact ? u"‹"_q : tr::lng_management_previous(tr::now));
-	_paging[1]->setText(compact ? u"›"_q : tr::lng_management_next(tr::now));
-	place(_paging);
+	_moveSelection->hide();
+	_moveSelection->setDisabled(!selected);
+	_title->resizeToWidth(std::max(1, right - pad));
+	auto y = st::accountLibraryHeaderHeight + gap;
+	right = width() - pad;
+	for (const auto tool : { _add, _import }) {
+		tool->setFullWidth(std::min(
+			available,
+			st::managementButton.style.font->width(tool->accessibilityName()) + 2 * gap));
+		if (right - tool->width() < pad) {
+			y += st::managementControlHeight + gap;
+			right = width() - pad;
+		}
+		right -= tool->width();
+		tool->move(right, y);
+		right -= gap;
+	}
+	if (compact) {
+		y += st::managementControlHeight + gap;
+		_statusFilter->move(pad, y);
+		_tagFilter->move(pad + _statusFilter->width() + gap, y);
+		y += st::managementControlHeight + gap;
+		right = width() - pad;
+	} else {
+		for (const auto tool : { _tagFilter, _statusFilter }) {
+			right -= tool->width();
+			tool->move(right, y);
+			right -= gap;
+		}
+	}
+	_number->resizeToWidth(st::accountLibraryNumberSearchWidth);
+	_number->move(pad, y);
+	_search->resizeToWidth(std::max(1, right - pad - _number->width() - gap));
+	_search->move(pad + _number->width() + gap, y);
+	y += st::managementControlHeight + gap;
+	_header->setGeometry(pad, y, available, st::accountLibraryTableHeaderHeight);
+	_selectPage->move(
+		st::managementTablePadding,
+		(st::accountLibraryTableHeaderHeight - _selectPage->height()) / 2);
+	_selectPage->setDisabled(_page.ids.isEmpty());
+	_selectPage->setChecked(!_page.ids.empty() && ranges::all_of(_page.ids, [&](const QString &id) {
+		return _selection.contains(id);
+	}), Ui::Checkbox::NotifyAboutChange::DontNotify);
+	y += st::accountLibraryTableHeaderHeight;
+	const auto content = _scroll->widget();
+	const auto contentHeight = content ? content->height() : 0;
+	const auto tableHeight = std::min(
+		contentHeight,
+		std::max(0, height() - y - pad - gap - st::managementControlHeight));
+	_scroll->setGeometry(pad, y, available, tableHeight);
+	if (content) {
+		content->resize(available, contentHeight);
+	}
+	y += tableHeight + gap;
+	_summary->setText(tr::lng_management_range(
+		tr::now,
+		lt_current,
+		(_page.total ? QString::number(_page.page * _query.pageSize + 1) : u"0"_q)
+			+ u"–"_q + QString::number(_page.page * _query.pageSize + _page.ids.size()),
+		lt_total,
+		QString::number(_page.total),
+		lt_amount,
+		QString::number(_query.pageSize)));
+	_summary->resizeToWidth(std::max(1, available / 2));
+	_summary->move(pad, y + (st::managementControlHeight - _summary->height()) / 2);
+	_paging[1]->move(width() - pad - _paging[1]->width(), y);
+	_pageNumber->setText(QString::number(_page.page + 1) + u" / "_q + QString::number(_page.pages));
+	_pageNumber->resizeToWidth(_pageNumber->textMaxWidth());
+	_pageNumber->move(_paging[1]->x() - gap - _pageNumber->width(),
+		y + (_paging[1]->height() - _pageNumber->height()) / 2);
+	_paging[0]->move(_pageNumber->x() - gap - _paging[0]->width(), y);
+	if (_summary->x() + _summary->width() + gap > _paging[0]->x()) {
+		_summary->hide();
+	} else {
+		_summary->show();
+	}
+	_selectAll->move(pad + _summary->textMaxWidth() + gap, y);
+	_selectAll->setVisible(!compact
+		&& _selectAll->x() + _selectAll->width() + gap < _paging[0]->x());
+	_selectAll->setDisabled(_page.matching.isEmpty());
 	_paging[0]->setDisabled(_page.page == 0);
 	_paging[1]->setDisabled(_page.page + 1 == _page.pages);
-	const auto emptySelection = _selection.freeze().isEmpty();
-	_moveSelection->setDisabled(emptySelection);
-	_bindSelection->setDisabled(emptySelection);
+	update();
 }
 
 bool AccountManagement::readMetadata() {
@@ -597,49 +848,85 @@ void AccountManagement::moveToGroup(
 		const std::vector<AccountTarget> &targets) {
 	const auto writable = readMetadata();
 	const auto exists = group.isEmpty() || _metadata.groups().contains(group);
-	auto results = QStringList();
+	if (!writable || !exists) {
+		_controller->showToast(tr::lng_management_move_failed(tr::now));
+		return;
+	}
 	for (const auto &target : targets) {
-		const auto account = target.account.get();
-		const auto valid = writable && exists && account && Identity(account) == target.id;
-		if (valid) {
+		if (FindAccount(target.id)) {
 			_metadata.assign(target.id, group);
 		}
-		results.push_back(target.name + u": "_q + (valid
-			? tr::lng_management_moved(tr::now) : tr::lng_management_move_failed(tr::now)));
 	}
-	if (writable) save();
-	showResults(std::move(results));
+	save();
+	_controller->showToast(tr::lng_management_moved(tr::now));
+}
+
+void AccountManagement::openAccount(QString id) {
+	if (const auto account = FindAccount(id)) {
+		_controller->widget()->closeAccountManagement();
+		Core::App().domain().maybeActivate(account);
+	}
+}
+
+void AccountManagement::logoutAccount(QString id) {
+	const auto account = FindAccount(id);
+	if (!account) {
+		return;
+	}
+	_controller->show(Ui::MakeConfirmBox({
+		.text = Window::LogoutConfirmationText(account),
+		.confirmed = [=](Fn<void()> close) {
+			close();
+			if (const auto target = FindAccount(id)) {
+				Core::App().logoutWithChecks(target);
+			}
+		},
+		.confirmText = tr::lng_settings_logout(),
+		.confirmStyle = &st::attentionBoxButton,
+	}));
 }
 
 void AccountManagement::rowMenu(QString id) {
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
-	_menu->addAction(tr::lng_management_open(tr::now), [=] {
-		if (const auto account = FindAccount(id)) {
-			const auto controller = _controller;
-			controller->widget()->closeAccountManagement();
-			Core::App().domain().maybeActivate(account);
-		}
+	_menu->addAction(tr::lng_management_open(tr::now), [=] { openAccount(id); });
+	_menu->addAction(tr::lng_management_bind(tr::now), [=] {
+		Ui::PostponeCall(this, [=] { bindMenu({ id }); });
 	});
-	_menu->addAction(tr::lng_management_tags(tr::now), [=] { editTags(id); });
+	_menu->addAction(tr::lng_management_tags_column(tr::now), [=] { editTags({ id }); });
+	_menu->addAction(tr::lng_settings_logout(tr::now), [=] { logoutAccount(id); });
 	_menu->popup(QCursor::pos());
 }
 
-void AccountManagement::editTags(QString id) {
+void AccountManagement::editTags(QStringList ids) {
+	if (ids.isEmpty()) {
+		return;
+	}
 	if (!_writable) {
 		_controller->showToast(tr::lng_management_unreadable(tr::now));
 		return;
 	}
-	editText(tr::lng_management_tags(tr::now), _metadata.tags(id).join(u", "_q),
+	editText(
+		ids.size() == 1 ? tr::lng_management_tags(tr::now)
+			: tr::lng_management_add_tags(tr::now),
+		ids.size() == 1 ? _metadata.tags(ids.front()).join(u", "_q) : QString(),
 		crl::guard(this, [=](QString text) {
-			if (!FindAccount(id) || !readMetadata()) return false;
-			_metadata.setTags(id, text.split(','));
+			if (!readMetadata()) {
+				return false;
+			}
+			for (const auto &id : ids) {
+				if (FindAccount(id)) {
+					_metadata.setTags(
+						id,
+						ids.size() == 1 ? text.split(',')
+							: _metadata.tags(id) + text.split(','));
+				}
+			}
 			save();
 			return true;
 		}));
 }
 
-void AccountManagement::bindMenu() {
-	const auto ids = _selection.freeze();
+void AccountManagement::bindMenu(QStringList ids) {
 	if (ids.isEmpty()) return;
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
 	for (const auto &entry : Core::App().settings().proxyLibrary().entries()) {
@@ -702,17 +989,39 @@ void AccountManagement::confirmBinding(QString proxy, QStringList ids) {
 	}));
 }
 
-void AccountManagement::showGroupFilterMenu() {
+void AccountManagement::showTagFilterMenu() {
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
-	_menu->addAction(tr::lng_management_all(tr::now), [=] {
-		_query.group.reset(); rebuildRows();
+	_menu->addAction(tr::lng_management_filter_tags(tr::now), [=] {
+		_query.tag.reset();
+		_query.group.reset();
+		_query.page = 0;
+		rebuildRows();
 	});
-	_menu->addAction(tr::lng_management_ungrouped(tr::now), [=] {
-		_query.group = QString(); rebuildRows();
-	});
-	for (auto i = _metadata.groups().begin(); i != _metadata.groups().end(); ++i) {
-		const auto id = i.key();
-		_menu->addAction(i.value(), [=] { _query.group = id; rebuildRows(); });
+	auto tags = QStringList();
+	for (const auto &account : _accounts) {
+		tags.append(_metadata.tags(account.id));
+	}
+	tags.removeDuplicates();
+	tags.sort(Qt::CaseInsensitive);
+	for (const auto &tag : tags) {
+		_menu->addAction(tag, [=] {
+			_query.tag = tag;
+			_query.group.reset();
+			_query.page = 0;
+			rebuildRows();
+		});
+	}
+	_menu->addSeparator();
+	auto groups = _metadata.groups();
+	groups.insert(QString(), tr::lng_management_ungrouped(tr::now));
+	for (auto i = groups.begin(); i != groups.end(); ++i) {
+		const auto group = i.key();
+		_menu->addAction(tr::lng_management_group_column(tr::now) + u": "_q + i.value(), [=] {
+			_query.group = group;
+			_query.tag.reset();
+			_query.page = 0;
+			rebuildRows();
+		});
 	}
 	_menu->popup(QCursor::pos());
 }
@@ -720,21 +1029,24 @@ void AccountManagement::showGroupFilterMenu() {
 void AccountManagement::showStatusFilterMenu() {
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
 	_menu->addAction(tr::lng_management_all(tr::now), [=] {
-		_query.status.reset(); rebuildRows();
+		_query.status.reset();
+		_query.page = 0;
+		rebuildRows();
 	});
-	for (const auto state : { Main::AccountStatus::Ready, Main::AccountStatus::Unbound,
-		Main::AccountStatus::Checking, Main::AccountStatus::Failed }) {
-		_menu->addAction(StatusText(state), [=] { _query.status = state; rebuildRows(); });
+	for (const auto state : {
+		Main::AccountStatus::Ready,
+		Main::AccountStatus::Unbound,
+		Main::AccountStatus::Checking,
+		Main::AccountStatus::Failed,
+		Main::AccountStatus::Direct,
+	}) {
+		_menu->addAction(StatusText(state), [=] {
+			_query.status = state;
+			_query.page = 0;
+			rebuildRows();
+		});
 	}
 	_menu->popup(QCursor::pos());
-}
-
-void AccountManagement::showResults(QStringList results) {
-	_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
-		box->setTitle(tr::lng_management_results());
-		box->addRow(object_ptr<Ui::FlatLabel>(box, results.join('\n'), st::defaultFlatLabel));
-		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-	}));
 }
 
 } // namespace

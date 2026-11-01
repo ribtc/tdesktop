@@ -177,7 +177,15 @@ AccountPage QueryAccounts(
 		const AccountQuery &query) {
 	auto result = AccountPage();
 	const auto search = query.search.trimmed();
+	const auto username = search.startsWith('@') ? search.mid(1) : search;
 	for (const auto &account : accounts) {
+		if (!query.number.isEmpty()
+			&& QString::number(account.number) != query.number) {
+			continue;
+		}
+		if (query.tag && !metadata.tags(account.id).contains(*query.tag)) {
+			continue;
+		}
 		if (query.group && metadata.group(account.id) != *query.group) {
 			continue;
 		}
@@ -187,6 +195,8 @@ AccountPage QueryAccounts(
 		if (!search.isEmpty()
 			&& !account.name.contains(search, Qt::CaseInsensitive)
 			&& !account.phone.contains(search, Qt::CaseInsensitive)
+			&& (account.username.isEmpty()
+				|| !account.username.contains(username, Qt::CaseInsensitive))
 			&& !metadata.tags(account.id).join(' ').contains(search, Qt::CaseInsensitive)) {
 			continue;
 		}

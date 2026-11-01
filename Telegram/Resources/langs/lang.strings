@@ -9530,3 +9530,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_session_network_error" = "Could not verify login; check the connection and try again";
 "lng_session_cancelled" = "Import cancelled";
 "lng_session_batch_limit" = "Select at most 100 session files at a time.";
+
+"lng_management_title" = "Enhanced features";
+"lng_management_subtitle" = "{amount} accounts · Groups and bulk actions";
+"lng_management_selected_count" = "{amount} selected";
+"lng_management_status_column" = "Isolation status";
+"lng_management_status_ready" = "Verified";
+"lng_management_status_unbound" = "Unbound";
+"lng_management_status_failed" = "Proxy failed";
+"lng_management_status_checking" = "Checking";
+"lng_management_range" = "{current} / {total} · {amount} per page";
+"lng_management_current_account" = "Current account · {name}";
+"lng_management_library" = "Account library";
+"lng_management_number" = "No.";
+"lng_management_tags_column" = "Tags";
+"lng_management_filter_tags" = "All tags";
+"lng_management_import" = "Import sessions";
+"lng_management_activate" = "Open";
+"lng_management_proxy_action" = "Proxy";
+"lng_management_add_tags" = "Add tags (comma-separated)";
+"lng_management_direct" = "Direct connection";

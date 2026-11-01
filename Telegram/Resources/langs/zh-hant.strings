@@ -249,3 +249,23 @@
 "lng_session_network_error" = "無法驗證登入，請檢查連線設定後重試";
 "lng_session_cancelled" = "已取消匯入";
 "lng_session_batch_limit" = "每次最多選擇 100 個 Session 檔案。";
+
+"lng_management_title" = "增強功能";
+"lng_management_subtitle" = "{amount} 個帳號 · 按群組管理與批次操作";
+"lng_management_selected_count" = "已選 {amount} 個";
+"lng_management_status_column" = "隔離狀態";
+"lng_management_status_ready" = "已驗證";
+"lng_management_status_unbound" = "未綁定";
+"lng_management_status_failed" = "代理失效";
+"lng_management_status_checking" = "檢測中";
+"lng_management_range" = "{current} / {total} · 每頁 {amount} 筆";
+"lng_management_current_account" = "目前帳號 · {name}";
+"lng_management_library" = "帳號庫";
+"lng_management_number" = "編號";
+"lng_management_tags_column" = "標籤";
+"lng_management_filter_tags" = "全部標籤";
+"lng_management_import" = "匯入協定號";
+"lng_management_activate" = "開啟";
+"lng_management_proxy_action" = "代理";
+"lng_management_add_tags" = "新增標籤（以英文逗號分隔）";
+"lng_management_direct" = "直接連線";

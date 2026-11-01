@@ -7,13 +7,15 @@
 
 namespace Main {
 
-enum class AccountStatus { Ready, Unbound, Checking, Failed };
+enum class AccountStatus { Ready, Unbound, Checking, Failed, Direct };
 
 struct ManagedAccount {
 	QString id;
 	QString name;
 	QString phone;
 	AccountStatus status = AccountStatus::Unbound;
+	int number = 0;
+	QString username;
 };
 
 class AccountMetadata final {
@@ -52,6 +54,8 @@ private:
 
 struct AccountQuery {
 	QString search;
+	QString number;
+	std::optional<QString> tag;
 	std::optional<QString> group;
 	std::optional<AccountStatus> status;
 	int page = 0;

@@ -453,13 +453,90 @@ proxyManagementWideTable: 780px;
 proxyManagementColumnWidth: 110px;
 proxyManagementDrawerWidth: 560px;
 managementNavigationWidth: 208px;
-managementPadding: 20px;
+managementPadding: 22px;
 managementGap: 12px;
 managementControlHeight: 42px;
-managementRowHeight: 64px;
+managementRowHeight: 50px;
 managementAvatarSize: 32px;
 managementWideTable: 680px;
 managementColumnWidth: 140px;
+
+managementHeaderHeight: 56px;
+managementNavigationRowHeight: 48px;
+managementTableHeaderHeight: 32px;
+managementSearchHeight: 36px;
+managementSelectionHeight: 40px;
+managementTablePadding: 12px;
+managementCheckWidth: 16px;
+managementStateWidth: 94px;
+managementGroupWidth: 80px;
+managementProxyWidth: 112px;
+managementActionWidth: 28px;
+managementTitleFont: font(17px semibold);
+managementTableFont: font(12px);
+managementNameFont: font(13px semibold);
+managementTitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(semiboldTextStyle) {
+		font: managementTitleFont;
+	}
+}
+managementCaption: FlatLabel(defaultSubTextLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: managementTableFont;
+	}
+}
+managementLink: LinkButton(defaultLinkButton) {
+	font: managementTableFont;
+	overFont: managementTableFont;
+}
+managementButton: RoundButton(defaultLightButton) {
+	width: -24px;
+	style: TextStyle(defaultTextStyle) {
+		font: font(13px);
+	}
+}
+managementPrimaryButton: RoundButton(managementButton) {
+	textFg: activeButtonFg;
+	textFgOver: activeButtonFgOver;
+	textBg: activeButtonBg;
+	textBgOver: activeButtonBgOver;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: activeButtonBgRipple;
+	}
+}
+managementSearch: InputField(defaultInputField) {
+	textBg: windowBgOver;
+	textBgActive: windowBgOver;
+	textMargins: margins(34px, 9px, 12px, 8px);
+	placeholderMargins: margins(0px, 0px, 0px, 0px);
+	placeholderFont: managementTableFont;
+	placeholderFgActive: windowSubTextFg;
+	placeholderScale: 0.;
+	placeholderShift: 0px;
+	border: 0px;
+	borderActive: 0px;
+	borderRadius: 4px;
+	heightMin: 36px;
+	heightMax: 36px;
+	style: TextStyle(defaultTextStyle) {
+		font: managementTableFont;
+	}
+}
+managementBackIcon: icon {{ "title_back", windowSubTextFg }};
+managementAccountsIcon: icon {{ "menu/groups", windowSubTextFg }};
+managementProxyIcon: icon {{ "proxy_on", windowSubTextFg }};
+managementSearchIcon: icon {{ "box_search", windowSubTextFg }};
+managementTableCheck: Check(defaultCheck) {
+	diameter: 16px;
+	thickness: 1px;
+	icon: icon {{ "default_checkbox_check", overviewCheckFgActive, point(1px, 3px) }};
+}
+managementTableCheckbox: Checkbox(defaultCheckbox) {
+	width: 16px;
+	margin: margins(0px, 0px, 0px, 0px);
+	checkPosition: point(0px, 0px);
+	textPosition: point(0px, 0px);
+}
 
 protectionWideWidth: 780px;
 protectionStatusWidth: 320px;
@@ -485,3 +562,18 @@ protectionLink: LinkButton(defaultLinkButton) {
 }
 
 protectionDialogWidth: 480px;
+
+accountLibraryHeaderHeight: 84px;
+accountLibraryRowHeight: 58px;
+accountLibraryTableHeaderHeight: 44px;
+accountLibraryWideTable: 900px;
+accountLibraryNumberWidth: 60px;
+accountLibraryNumberSearchWidth: 88px;
+accountLibraryUsernameWidth: 140px;
+accountLibraryTagsWidth: 150px;
+accountLibraryProxyWidth: 160px;
+accountLibraryActionsWidth: 160px;
+accountLibraryFilterWidth: 126px;
+accountLibraryNumberSearch: InputField(managementSearch) {
+	textMargins: margins(12px, 9px, 12px, 8px);
+}

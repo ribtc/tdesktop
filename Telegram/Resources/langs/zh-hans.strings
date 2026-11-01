@@ -249,3 +249,23 @@
 "lng_session_network_error" = "无法验证登录，请检查连接设置后重试";
 "lng_session_cancelled" = "已取消导入";
 "lng_session_batch_limit" = "每次最多选择 100 个 Session 文件。";
+
+"lng_management_title" = "增强功能";
+"lng_management_subtitle" = "{amount} 个账号 · 按分组管理与批量操作";
+"lng_management_selected_count" = "已选 {amount} 个";
+"lng_management_status_column" = "隔离状态";
+"lng_management_status_ready" = "已验证";
+"lng_management_status_unbound" = "未绑定";
+"lng_management_status_failed" = "代理失效";
+"lng_management_status_checking" = "检测中";
+"lng_management_range" = "{current} / {total} · 每页 {amount} 条";
+"lng_management_current_account" = "当前账号 · {name}";
+"lng_management_library" = "账号库";
+"lng_management_number" = "编号";
+"lng_management_tags_column" = "标签";
+"lng_management_filter_tags" = "全部标签";
+"lng_management_import" = "导入协议号";
+"lng_management_activate" = "打开";
+"lng_management_proxy_action" = "代理";
+"lng_management_add_tags" = "添加标签（用英文逗号分隔）";
+"lng_management_direct" = "直接连接";

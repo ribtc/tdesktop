@@ -69,6 +69,7 @@ introHeight: 406px;
 introStepTopMin: 76px;
 introStepWidth: 380px;
 introNextTop: 266px;
+introSessionTop: 230px;
 introNextSlide: 200px;
 introStepHeight: 384px;
 introContentTopAdd: 30px;
@@ -190,5 +191,6 @@ introQrStep: FlatLabel(defaultFlatLabel) {
 introQrStepsTop: 232px;
 introQrStepMargins: margins(20px, 8px, 0px, 0px);
 introQrSkipTop: 360px;
+introQrSessionTop: 388px;
 introQrCenterSize: 44px;
 introQrPlane: icon {{ "intro_qr_plane", activeButtonFg }};

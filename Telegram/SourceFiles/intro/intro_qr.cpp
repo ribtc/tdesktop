@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/components/passkeys.h"
 #include "data/data_passkey_deserialize.h"
 #include "intro/intro_phone.h"
+#include "intro/session_import_box.h"
 #include "intro/intro_widget.h"
 #include "intro/intro_password_check.h"
 #include "lang/lang_keys.h"
@@ -33,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "qr/qr_generate.h"
 #include "platform/platform_webauthn.h"
+#include "window/window_controller.h"
 #include "styles/style_intro.h"
 
 namespace Intro {
@@ -371,6 +373,19 @@ void QrWidget::setupControls() {
 	}, _skip->lifetime());
 
 	_skip->setClickedCallback([=] { submit(); });
+	const auto session = Ui::CreateChild<Ui::LinkButton>(
+		this,
+		tr::lng_session_login(tr::now));
+	rpl::combine(sizeValue(), session->widthValue()) | rpl::on_next([=](
+			QSize size,
+			int width) {
+		session->moveToLeft(
+			(size.width() - width) / 2,
+			contentTop() + st::introQrSessionTop);
+	}, session->lifetime());
+	session->setClickedCallback([=] {
+		ChooseSessionFiles(this, &account(), getData()->controller->uiShow());
+	});
 }
 
 void QrWidget::setupPasskeyLink() {
@@ -392,7 +407,7 @@ void QrWidget::setupPasskeyLink() {
 			(size.width() - passkeyWidth) / 2,
 			(contentTop()
 				+ st::introQrSkipTop
-				+ 1.5 * st::normalFont->height));
+				+ 3 * st::normalFont->height));
 	}, _passkey->lifetime());
 
 	_passkey->setClickedCallback([=] {

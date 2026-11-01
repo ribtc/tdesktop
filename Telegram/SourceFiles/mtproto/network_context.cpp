@@ -42,6 +42,14 @@ NetworkContext::NetworkContext(Mode mode) {
 	_snapshot._current = std::make_shared<std::atomic<bool>>(true);
 }
 
+NetworkContext::NetworkContext(const NetworkSnapshot &route)
+: _snapshot(route) {
+	Expects(route.allowed());
+
+	_snapshot.generation = 0;
+	_snapshot._current = std::make_shared<std::atomic<bool>>(true);
+}
+
 NetworkContext::~NetworkContext() {
 	_snapshot._current->store(false);
 	_changes.fire({});

@@ -52,6 +52,7 @@ public:
 	};
 
 	explicit NetworkContext(Mode mode = Mode::Isolated);
+	explicit NetworkContext(const NetworkSnapshot &route);
 	~NetworkContext();
 
 	[[nodiscard]] NetworkSnapshot snapshot() const;

@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "main/main_session_settings.h"
 #include "data/data_session.h"
 #include "data/data_changes.h"
 #include "data/data_user.h"
@@ -331,6 +332,31 @@ void Domain::scheduleUpdateUnreadBadge() {
 }
 
 not_null<Main::Account*> Domain::add(MTP::Environment environment) {
+	return addAccount(environment, nullptr, QString());
+}
+
+not_null<Account*> Domain::addAuthorized(
+		std::shared_ptr<MTP::AuthKey> key,
+		const MTPUser &user,
+		const QString &proxyId) {
+	Expects(key != nullptr);
+	Expects(user.type() == mtpc_user && user.c_user().is_self());
+
+	const auto account = addAccount(
+		MTP::Environment::Production,
+		std::move(key),
+		proxyId);
+	account->createSession(user);
+	account->local().enforceModernStorageIdBots();
+	account->local().writeMtpData();
+	scheduleWriteAccounts();
+	return account;
+}
+
+not_null<Account*> Domain::addAccount(
+		MTP::Environment environment,
+		std::shared_ptr<MTP::AuthKey> key,
+		const QString &proxyId) {
 	Expects(started());
 
 	static const auto cloneConfig = [](const MTP::Config &config) {
@@ -366,7 +392,11 @@ not_null<Main::Account*> Domain::add(MTP::Environment environment) {
 		.account = std::make_unique<Account>(this, _dataName, index)
 	});
 	const auto account = _accounts.back().account.get();
-	account->setMtpMainDcId(mainDcId);
+	account->setMtpMainDcId(key ? key->dcId() : mainDcId);
+	if (key) {
+		account->setLegacyMtpKey(std::move(key));
+		account->local().writePref<QString>("account-proxy-binding", proxyId);
+	}
 	_local->startAdded(account, std::move(config));
 	watchSession(account);
 	_accountsChanges.fire({});

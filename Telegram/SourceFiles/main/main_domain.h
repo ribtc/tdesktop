@@ -18,6 +18,7 @@ enum class StartResult : uchar;
 } // namespace Storage
 
 namespace MTP {
+class AuthKey;
 enum class Environment : uchar;
 } // namespace MTP
 
@@ -91,6 +92,10 @@ public:
 	void notifyUnreadBadgeChanged();
 
 	[[nodiscard]] not_null<Main::Account*> add(MTP::Environment environment);
+	[[nodiscard]] not_null<Account*> addAuthorized(
+		std::shared_ptr<MTP::AuthKey> key,
+		const MTPUser &user,
+		const QString &proxyId);
 	void maybeActivate(not_null<Main::Account*> account);
 	void activate(not_null<Main::Account*> account);
 	void addActivated(MTP::Environment environment, bool newWindow = false);
@@ -105,6 +110,10 @@ public:
 	[[nodiscard]] int activeForStorage() const;
 
 private:
+	[[nodiscard]] not_null<Account*> addAccount(
+		MTP::Environment environment,
+		std::shared_ptr<MTP::AuthKey> key,
+		const QString &proxyId);
 	[[nodiscard]] Storage::StartResult startWith(
 		Storage::PasscodeDerivation derived);
 	void activateAfterStarting();

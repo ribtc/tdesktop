@@ -4,6 +4,16 @@
 # For license and copyright information please follow this link:
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
+add_executable(test_session_file)
+init_target(test_session_file "(tests)")
+target_sources(test_session_file PRIVATE ${src_loc}/tests/test_session_file.cpp)
+target_link_libraries(test_session_file PRIVATE tdesktop::td_session_file)
+if (TARGET session_sqlite)
+    target_link_libraries(test_session_file PRIVATE session_sqlite)
+else()
+    target_link_libraries(test_session_file PRIVATE ${session_sqlite_target})
+endif()
+
 add_executable(test_text WIN32)
 init_target(test_text "(tests)")
 

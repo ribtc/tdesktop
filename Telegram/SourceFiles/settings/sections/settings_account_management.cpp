@@ -7,6 +7,7 @@
 #include "data/data_changes.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "intro/session_import_box.h"
 #include "lang/lang_keys.h"
 #include "main/account_management.h"
 #include "main/main_account.h"
@@ -292,9 +293,19 @@ AccountManagement::AccountManagement(
 		p.fillRect(clip, st::windowBg);
 	}, lifetime());
 	_tools.push_back(button(tr::lng_management_add(tr::now), [=] {
-		const auto environment = _controller->account().mtp().isTestMode()
-			? MTP::Environment::Test : MTP::Environment::Production;
-		Core::App().domain().addActivated(environment);
+		_menu = base::make_unique_q<Ui::PopupMenu>(this);
+		_menu->addAction(tr::lng_management_add(tr::now), [=] {
+			const auto environment = _controller->account().mtp().isTestMode()
+				? MTP::Environment::Test : MTP::Environment::Production;
+			Core::App().domain().addActivated(environment);
+		});
+		_menu->addAction(tr::lng_session_login(tr::now), [=] {
+			Intro::ChooseSessionFiles(
+				this,
+				&_controller->account(),
+				_controller->uiShow());
+		});
+		_menu->popup(QCursor::pos());
 	}));
 	_tools.push_back(button(tr::lng_management_groups(tr::now), [=] { groupMenu(false); }));
 	_groupFilter = button(tr::lng_management_filter_group(tr::now), [=] {

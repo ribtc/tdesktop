@@ -358,6 +358,8 @@ void ProtectionPage::refresh() {
 		layout();
 	}, _status->lifetime());
 	layout();
+	_options->show();
+	_status->show();
 	_scroll->scrollToY(oldTop);
 }
 

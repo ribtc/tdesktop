@@ -236,7 +236,7 @@
 "lng_protection_storage_error" = "無法讀取保護資料。已保留原記錄，暫時無法修改設定。";
 
 "lng_session_login" = "session號登入";
-"lng_session_import_about" = "匯入 Telethon .session 檔案，使用目前帳號的連線設定。關閉視窗會停止尚未完成的匯入。";
+"lng_session_import_about" = "匯入 Telethon .session 檔案，自動使用同名 JSON 中的代理並綁定帳號；未提供代理資訊時沿用目前帳號的連線。關閉視窗會停止尚未完成的匯入。";
 "lng_session_waiting" = "等待匯入";
 "lng_session_reading" = "正在解析 Session";
 "lng_session_connecting" = "正在驗證登入";
@@ -244,7 +244,7 @@
 "lng_session_duplicate" = "帳號已存在，已略過";
 "lng_session_unreadable" = "無法讀取檔案（最大 64 MB）";
 "lng_session_unsupported" = "不支援此格式，請選擇 Telethon SQLite Session";
-"lng_session_invalid" = "Session 檔案損壞或無效";
+"lng_session_invalid" = "Session 或同名 JSON 檔案損壞或無效";
 "lng_session_unauthorized" = "Session 未登入、已過期或已被撤銷";
 "lng_session_network_error" = "無法驗證登入，請檢查連線設定後重試";
 "lng_session_cancelled" = "已取消匯入";

@@ -236,7 +236,7 @@
 "lng_protection_storage_error" = "无法读取保护数据。已保留原记录，暂时无法修改设置。";
 
 "lng_session_login" = "session号登陆";
-"lng_session_import_about" = "导入 Telethon .session 文件，使用当前账号的连接设置。关闭窗口会停止尚未完成的导入。";
+"lng_session_import_about" = "导入 Telethon .session 文件，自动使用同名 JSON 中的代理并绑定账号；未提供代理信息时沿用当前账号的连接。关闭窗口会停止未完成的导入。";
 "lng_session_waiting" = "等待导入";
 "lng_session_reading" = "正在解析 Session";
 "lng_session_connecting" = "正在验证登录";
@@ -244,7 +244,7 @@
 "lng_session_duplicate" = "账号已存在，已跳过";
 "lng_session_unreadable" = "无法读取文件（最大 64 MB）";
 "lng_session_unsupported" = "不支持此格式，请选择 Telethon SQLite Session";
-"lng_session_invalid" = "Session 文件损坏或无效";
+"lng_session_invalid" = "Session 或同名 JSON 文件损坏或无效";
 "lng_session_unauthorized" = "Session 未登录、已过期或已被撤销";
 "lng_session_network_error" = "无法验证登录，请检查连接设置后重试";
 "lng_session_cancelled" = "已取消导入";

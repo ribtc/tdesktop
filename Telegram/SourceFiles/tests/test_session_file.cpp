@@ -83,6 +83,72 @@ int main(int argc, char **argv) {
 		"Read a Telethon v7 DC and all 256 key bytes without UI or networking.");
 	Require(ReadBytes(valid) == before,
 		"Importing preserves the original session byte for byte.");
+	const auto sidecar = directory.filePath(QString::fromLatin1("valid.json"));
+	auto json = QFile(sidecar);
+	Require(json.open(QIODevice::WriteOnly), "Create the proxy sidecar.");
+	json.write(R"({"proxy":{"type":"socks5","host":"2001:db8::1","port":1080,"username":"user:@","password":" p\"密\\ ","prefer_ipv6":true}})");
+	json.close();
+	const auto withProxy = Main::ReadSessionFile(valid);
+	const auto proxyCredentials = std::get_if<Main::SessionCredentials>(&withProxy);
+	Require(proxyCredentials && proxyCredentials->proxySpecified
+		&& proxyCredentials->proxy
+		&& proxyCredentials->proxy->type == QString::fromLatin1("socks5")
+		&& proxyCredentials->proxy->host == QString::fromLatin1("2001:db8::1")
+		&& proxyCredentials->proxy->port == 1080
+		&& proxyCredentials->proxy->username == QString::fromLatin1("user:@")
+		&& proxyCredentials->proxy->password == QString::fromUtf8(" p\"密\\ ")
+		&& proxyCredentials->proxy->preferIPv6,
+		"Read TGDirector proxy credentials without changing their values.");
+	Require(ReadBytes(valid) == before, "Proxy import preserves the session.");
+	const auto writeMetadata = [&](const QByteArray &bytes) {
+		Require(json.open(QIODevice::WriteOnly | QIODevice::Truncate),
+			"Replace the proxy sidecar.");
+		Require(json.write(bytes) == bytes.size(), "Write all metadata.");
+		json.close();
+	};
+	writeMetadata(R"({"proxy":null})");
+	const auto direct = Main::ReadSessionFile(valid);
+	const auto directCredentials = std::get_if<Main::SessionCredentials>(&direct);
+	Require(directCredentials && directCredentials->proxySpecified
+		&& !directCredentials->proxy, "Null proxy explicitly selects direct mode.");
+	writeMetadata(R"({"app_id":1234,"unknown":"preserved source"})");
+	const auto legacy = Main::ReadSessionFile(valid);
+	const auto legacyCredentials = std::get_if<Main::SessionCredentials>(&legacy);
+	Require(legacyCredentials && !legacyCredentials->proxySpecified,
+		"Old metadata without a proxy inherits the entry account route.");
+	writeMetadata(R"({"proxy":{"type":"http","host":"proxy.example.com","port":8080}})");
+	const auto http = Main::ReadSessionFile(valid);
+	const auto httpCredentials = std::get_if<Main::SessionCredentials>(&http);
+	Require(httpCredentials && httpCredentials->proxy
+		&& httpCredentials->proxy->type == QString::fromLatin1("http")
+		&& httpCredentials->proxy->username.isEmpty()
+		&& httpCredentials->proxy->password.isEmpty()
+		&& !httpCredentials->proxy->preferIPv6,
+		"Parse HTTP metadata independently of the client's binding capabilities.");
+	for (const auto bytes : {
+		R"({)",
+		R"([])",
+		R"({"proxy":[]})",
+		R"({"proxy":{"type":"socks5","host":" ","port":1080}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":0}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":65536}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":1.5}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":"1080"}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":1080,"password":123}})",
+		R"({"proxy":{"type":"socks5","host":"192.0.2.1","port":1080,"prefer_ipv6":"false"}})",
+	}) {
+		writeMetadata(bytes);
+		ExpectError(valid, Main::SessionFileError::Invalid);
+	}
+	writeMetadata(R"({"proxy":{"type":"unknown","host":"192.0.2.1","port":1080}})");
+	ExpectError(valid, Main::SessionFileError::Unsupported);
+	writeMetadata(QByteArray(64 * 1024 + 1, ' '));
+	ExpectError(valid, Main::SessionFileError::Unreadable);
+	Require(QFile::remove(sidecar), "Remove the proxy fixture.");
+	const auto noMetadata = Main::ReadSessionFile(valid);
+	const auto original = std::get_if<Main::SessionCredentials>(&noMetadata);
+	Require(original && !original->proxySpecified && !original->proxy,
+		"Bare session files retain the existing import behavior.");
 	Require(QFile::setPermissions(valid,
 		QFileDevice::ReadOwner | QFileDevice::WriteOwner), "Restore fixture access.");
 	Database(valid,

@@ -31,6 +31,7 @@ QString StatusText(Main::SessionImportStatus status) {
 	case Status::Unsupported: return tr::lng_session_unsupported(tr::now);
 	case Status::Invalid: return tr::lng_session_invalid(tr::now);
 	case Status::Unauthorized: return tr::lng_session_unauthorized(tr::now);
+	case Status::ProxyUnsupported: return tr::lng_account_proxy_unsupported(tr::now);
 	case Status::NetworkError: return tr::lng_session_network_error(tr::now);
 	case Status::Cancelled: return tr::lng_session_cancelled(tr::now);
 	}

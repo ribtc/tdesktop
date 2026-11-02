@@ -3,6 +3,8 @@
 #include "main/session_sqlite.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -40,6 +42,66 @@ std::optional<bool> IsTable(sqlite3 *db, const char *name) {
 	const auto type = sqlite3_column_text(query.get(), 0);
 	return type && QByteArray(reinterpret_cast<const char*>(type)) == "table"
 		&& sqlite3_step(query.get()) == SQLITE_DONE;
+}
+
+std::optional<SessionFileError> ReadProxy(
+		const QString &path,
+		SessionCredentials &credentials) {
+	const auto info = QFileInfo(path);
+	const auto sidecar = QFileInfo(info.path() + '/' + info.completeBaseName()
+		+ ".json");
+	if (!sidecar.exists() && !sidecar.isSymLink()) {
+		return std::nullopt;
+	}
+	auto file = QFile(sidecar.absoluteFilePath());
+	constexpr auto kMaxMetadataSize = 64 * 1024;
+	if (!sidecar.isFile() || sidecar.size() > kMaxMetadataSize
+		|| !file.open(QIODevice::ReadOnly)) {
+		return SessionFileError::Unreadable;
+	}
+	const auto bytes = file.read(kMaxMetadataSize + 1);
+	if (file.error() != QFileDevice::NoError || bytes.size() > kMaxMetadataSize) {
+		return SessionFileError::Unreadable;
+	}
+	const auto document = QJsonDocument::fromJson(bytes);
+	if (!document.isObject()) {
+		return SessionFileError::Invalid;
+	}
+	const auto value = document.object().value("proxy");
+	if (value.isUndefined()) {
+		return std::nullopt;
+	}
+	credentials.proxySpecified = true;
+	if (value.isNull()) {
+		return std::nullopt;
+	} else if (!value.isObject()) {
+		return SessionFileError::Invalid;
+	}
+	const auto object = value.toObject();
+	auto proxy = SessionProxy();
+	proxy.type = object.value("type").toString();
+	proxy.host = object.value("host").toString();
+	proxy.port = object.value("port").toInt(-1);
+	if (proxy.host.trimmed().isEmpty() || proxy.port < 1 || proxy.port > 65535) {
+		return SessionFileError::Invalid;
+	} else if (proxy.type != "socks5" && proxy.type != "http") {
+		return SessionFileError::Unsupported;
+	}
+	for (const auto key : { "username", "password" }) {
+		const auto field = object.value(key);
+		if (!field.isUndefined() && !field.isString()) {
+			return SessionFileError::Invalid;
+		}
+	}
+	const auto ipv6 = object.value("prefer_ipv6");
+	if (!ipv6.isUndefined() && !ipv6.isBool()) {
+		return SessionFileError::Invalid;
+	}
+	proxy.username = object.value("username").toString();
+	proxy.password = object.value("password").toString();
+	proxy.preferIPv6 = ipv6.toBool();
+	credentials.proxy = std::move(proxy);
+	return std::nullopt;
 }
 
 } // namespace
@@ -127,6 +189,9 @@ SessionFileResult ReadSessionFile(const QString &path) {
 		credentials.authKey.end(),
 		[](unsigned char value) { return value == 0; })) {
 		return SessionFileError::Unauthorized;
+	}
+	if (const auto error = ReadProxy(path, credentials)) {
+		return *error;
 	}
 	return credentials;
 }

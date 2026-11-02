@@ -9517,7 +9517,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_protection_storage_error" = "Protection data could not be read. Existing records were preserved; settings are unavailable.";
 
 "lng_session_login" = "Log in with Session";
-"lng_session_import_about" = "Import Telethon .session files using the current account’s connection. Closing stops unfinished imports.";
+"lng_session_import_about" = "Import Telethon .session files. A matching JSON proxy is used and bound automatically; without proxy metadata, the current account’s connection is used. Closing stops unfinished imports.";
 "lng_session_waiting" = "Waiting";
 "lng_session_reading" = "Reading session";
 "lng_session_connecting" = "Verifying login";
@@ -9525,7 +9525,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_session_duplicate" = "Account already added";
 "lng_session_unreadable" = "Cannot read this file (maximum 64 MB)";
 "lng_session_unsupported" = "Unsupported format; choose a Telethon SQLite session";
-"lng_session_invalid" = "Session file is damaged or invalid";
+"lng_session_invalid" = "Session or matching JSON file is damaged or invalid";
 "lng_session_unauthorized" = "Session is not authorized, expired or revoked";
 "lng_session_network_error" = "Could not verify login; check the connection and try again";
 "lng_session_cancelled" = "Import cancelled";

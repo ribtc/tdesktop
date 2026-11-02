@@ -4,6 +4,7 @@
 #include "base/weak_ptr.h"
 #include "main/session_file.h"
 #include "mtproto/network_context.h"
+#include "mtproto/proxy_check.h"
 #include <QtCore/QObject>
 #include <optional>
 
@@ -28,6 +29,7 @@ enum class SessionImportStatus {
 	Invalid,
 	Unauthorized,
 	NetworkError,
+	ProxyUnsupported,
 	Cancelled,
 };
 
@@ -48,6 +50,9 @@ public:
 private:
 	void next();
 	void connect(SessionFileResult result);
+	void prepareRoute(const SessionCredentials &credentials);
+	void startConnection();
+	[[nodiscard]] rpl::lifetime runProxyCheck(Fn<void(int)> done);
 	void finish(SessionImportStatus status);
 	void accept(const MTPUser &user);
 	void commitImport(const MTPUser &user);
@@ -56,6 +61,11 @@ private:
 	base::weak_ptr<Account> _source;
 	base::weak_ptr<Account> _firstImported;
 	MTP::NetworkSnapshot _route;
+	std::unique_ptr<MTP::NetworkContext> _routeContext;
+	bool _inheritRoute = false;
+	MTP::ProxyCheckConnection _proxyCheckV4;
+	MTP::ProxyCheckConnection _proxyCheckV6;
+	rpl::lifetime _proxyCheckLifetime;
 	QStringList _paths;
 	int _index = -1;
 	bool _cancelled = false;

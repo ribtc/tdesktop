@@ -34,7 +34,6 @@ jobs:
       RUST_PATCHES: "aec474953ff7ee9b6e4cd9b8658288ea86d124f3"
       RUST_TOOLCHAIN: "1.96.1"
       MANUAL_CACHING: "1"
-      AUTO_CACHING: "1"
 
     steps:
       - name: Check production credentials.
@@ -71,10 +70,6 @@ jobs:
           brew list --versions $libs >> CACHE_KEY.txt
           echo $MANUAL_CACHING >> CACHE_KEY.txt
           echo "$GITHUB_WORKSPACE" >> CACHE_KEY.txt
-          if [ "$AUTO_CACHING" = "1" ]; then
-            thisFile=$REPO_NAME/.github/workflows/ci.yml
-            echo `md5 -q $thisFile` >> CACHE_KEY.txt
-          fi
           echo "CACHE_KEY=`md5 -q CACHE_KEY.txt`" >> $GITHUB_ENV
 
           echo "MACOSX_DEPLOYMENT_TARGET=$(grep 'set(QT_SUPPORTED_MIN_MACOS_VERSION' /opt/homebrew/Cellar/qtbase/*/lib/cmake/Qt6/Qt6ConfigExtras.cmake | sed -E 's/^.*"(.*)"\)$/\1/')" >> $GITHUB_ENV
@@ -85,7 +80,7 @@ jobs:
 
       - name: Rust libraries cache.
         id: cache-tdesktop-rust
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tdesktop_rust
           key: ${{ runner.OS }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_PATCHES }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
@@ -143,9 +138,16 @@ jobs:
             --library --out-dir "$LibrariesPath/local/tdesktop_rust/include/wallet_engine" \
             target/release/libtdesktop_rust.dylib
 
+      - name: Save tdesktop-rust cache.
+        if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tdesktop_rust
+          key: ${{ steps.cache-tdesktop-rust.outputs.cache-primary-key }}
+
       - name: RNNoise cache.
         id: cache-rnnoise
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/rnnoise
           key: ${{ runner.OS }}-rnnoise-${{ env.RNNOISE }}-${{ env.CACHE_KEY }}
@@ -161,9 +163,16 @@ jobs:
           make -j$(sysctl -n hw.logicalcpu)
           make install
 
+      - name: Save rnnoise cache.
+        if: steps.cache-rnnoise.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/rnnoise
+          key: ${{ steps.cache-rnnoise.outputs.cache-primary-key }}
+
       - name: WebRTC cache.
         id: cache-webrtc
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tg_owt
           key: ${{ runner.OS }}-webrtc-${{ env.WEBRTC }}-${{ env.CACHE_KEY }}
@@ -179,9 +188,16 @@ jobs:
           cmake --build build
           cmake --install build
 
+      - name: Save webrtc cache.
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tg_owt
+          key: ${{ steps.cache-webrtc.outputs.cache-primary-key }}
+
       - name: TDE2E cache.
         id: cache-tde2e
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tde2e
           key: ${{ runner.OS }}-tde2e-${{ env.TDE2E }}-${{ env.CACHE_KEY }}
@@ -199,6 +215,13 @@ jobs:
           cmake -Bbuild . -DCMAKE_INSTALL_PREFIX=$LibrariesPath/local/tde2e -DTD_E2E_ONLY=ON
           cmake --build build
           cmake --install build
+
+      - name: Save tde2e cache.
+        if: steps.cache-tde2e.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tde2e
+          key: ${{ steps.cache-tde2e.outputs.cache-primary-key }}
 
       - name: Build Release.
         env:
@@ -436,7 +459,7 @@ jobs:
 
       - name: Libraries.
         run: |
-          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent qt6
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent qt6 qt-release-only
 
       - name: Free up some disk space.
         shell: bash

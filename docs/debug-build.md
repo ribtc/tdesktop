@@ -56,7 +56,14 @@ gh workflow run ci.yml --ref codex/account-network-isolation
 仓库 Actions Secrets 需配置 `TDESKTOP_API_ID` 和 `TDESKTOP_API_HASH`。
 两端均使用正式 API 凭据，关闭自动更新与崩溃上报，只构建 Release。
 macOS 使用 Homebrew 依赖；Windows 沿用准备脚本，并分别缓存 ThirdParty、Qt
-和其他库。Windows 依赖准备成功即保存缓存，后续应用编译失败也能复用。
+和其他库。Windows 的 Qt 使用 `qt-release-only`，省去 Debug Qt 和调试符号；
+本地默认准备方式不变。macOS 每项依赖成功后立即保存缓存，Windows 在依赖准备
+成功后保存缓存，后续应用编译失败仍可复用。
+
+当前只缓存依赖，不缓存主程序对象文件。缓存受 GitHub 分支和标签作用域限制，
+新标签不能读取另一标签的缓存；需要在默认分支预热相同依赖缓存，或在固定分支
+重复手动构建才能持续复用。macOS 缓存 key 包含工具链、Homebrew 版本及手动
+缓存版本号；修改依赖编译配方时同步递增 `MANUAL_CACHING`。
 
 发布资产为：
 

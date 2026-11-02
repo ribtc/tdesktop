@@ -64,6 +64,7 @@ optionsList = [
     'skip-release',
     'build-stackwalk',
     'qt-asserts',
+    'qt-release-only',
 ]
 options = []
 runCommand = []
@@ -317,6 +318,10 @@ def filterByPlatform(commands):
                     inscope = False
                 elif len(scopes) == 1:
                     continue
+            if 'qtdebug' in scopes:
+                inscope = inscope and 'qt-release-only' not in options
+            if 'qtrelease' in scopes:
+                inscope = inscope and 'qt-release-only' in options
             if 'asserts' in scopes:
                 inscope = inscope and 'qt-asserts' in options
             skip = inscope if m.group(1) == '!' else not inscope
@@ -1765,6 +1770,11 @@ win:
     SET ASSERTS=
 release:
     SET CONFIGURATIONS=-debug-and-release
+win_qtdebug:
+    SET DEBUG_INFO=-force-debug-info
+win_qtrelease:
+    SET CONFIGURATIONS=-release
+    SET DEBUG_INFO=
 win_asserts:
     SET ASSERTS=-force-asserts
 win:
@@ -1778,7 +1788,7 @@ win:
     configure -prefix "%LIBS_DIR%\\Qt-%QT%" ^
         %CONFIGURATIONS% ^
         %ASSERTS% ^
-        -force-debug-info ^
+        %DEBUG_INFO% ^
         -opensource ^
         -confirm-license ^
         -static ^
@@ -1827,8 +1837,10 @@ win:
         -D LCMS2_INCLUDE_DIR="%LCMS2_DIR%\\include" ^
         -D LCMS2_LIBRARIES="%LCMS2_DIR%\\out\\Release\\src\\liblcms2.a"
 
+win_qtdebug:
     cmake --build . --config Debug
     cmake --install . --config Debug
+win:
     cmake --build .
     cmake --install .
 """)

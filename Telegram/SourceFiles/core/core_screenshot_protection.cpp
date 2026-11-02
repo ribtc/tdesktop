@@ -58,11 +58,6 @@ void ScreenshotProtection::addReason(
 }
 
 bool ScreenshotProtection::activeFor(not_null<QWidget*> window) const {
-	for (const auto &[id, reason] : _reasons) {
-		if (reason.active && reason.window == window.get()) {
-			return true;
-		}
-	}
 	return false;
 }
 

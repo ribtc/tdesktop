@@ -373,25 +373,7 @@ rpl::producer<bool> CanPinMessagesValue(not_null<PeerData*> peer) {
 }
 
 rpl::producer<bool> AllowsForwardingValue(not_null<PeerData*> peer) {
-	if (const auto user = peer->asUser()) {
-		return rpl::combine(
-			PeerFlagValue(user, UserDataFlag::NoForwardsMyEnabled),
-			PeerFlagValue(user, UserDataFlag::NoForwardsPeerEnabled)
-		) | rpl::map([](bool my, bool peer) {
-			return !my && !peer;
-		});
-	} else if (const auto chat = peer->asChat()) {
-		return PeerFlagValue(
-			chat,
-			ChatDataFlag::NoForwards
-		) | rpl::map(!rpl::mappers::_1);
-	} else if (const auto channel = peer->asChannel()) {
-		return PeerFlagValue(
-			channel,
-			ChannelDataFlag::NoForwards
-		) | rpl::map(!rpl::mappers::_1);
-	}
-	return rpl::single(true);
+	return rpl::single(peer->allowsForwarding());
 }
 
 rpl::producer<bool> CanManageGroupCallValue(not_null<PeerData*> peer) {

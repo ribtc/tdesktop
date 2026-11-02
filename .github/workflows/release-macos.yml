@@ -1,12 +1,17 @@
 name: macOS Release
 
 on:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
   push:
     tags:
       - 'v*-telegram-ultra.*'
 
 concurrency:
-  group: macos-release-${{ github.ref }}
+  group: macos-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -19,6 +24,7 @@ jobs:
     timeout-minutes: 360
 
     env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       GIT: "https://github.com"
       CMAKE_GENERATOR: "Ninja"
       CMAKE_BUILD_TYPE: "Release"
@@ -51,6 +57,10 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.REPO_NAME }}
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Record source commit.
+        run: echo "SOURCE_COMMIT=$(git -C "$REPO_NAME" rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: First set up.
         run: |
@@ -233,8 +243,9 @@ jobs:
           import json, os
           from pathlib import Path
           Path('build-info.json').write_text(json.dumps({
-              'commit': os.environ['GITHUB_SHA'],
-              'tag': os.environ['GITHUB_REF_NAME'],
+              'commit': os.environ['SOURCE_COMMIT'],
+              'workflow_commit': os.environ['GITHUB_SHA'],
+              'tag': os.environ['RELEASE_TAG'],
               'configuration': 'Release',
               'architecture': 'arm64',
               'signing': 'ad-hoc',
@@ -251,15 +262,15 @@ jobs:
 
           使用正式 API 凭据，自动更新关闭。安装包采用 ad-hoc 签名，未经过 Apple 公证。
 
-          源码提交：$GITHUB_SHA
+          源码提交：$SOURCE_COMMIT
           [GitHub 构建记录](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
           EOF
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --verify-tag --draft --title "TelegramUltra 7.3.4 · macOS Release" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
-          gh release upload "$GITHUB_REF_NAME" "$GITHUB_WORKSPACE/release/"* \
+          gh release upload "$RELEASE_TAG" "$GITHUB_WORKSPACE/release/"* \
             --repo "$GITHUB_REPOSITORY" --clobber
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --draft=false --notes-file "$RUNNER_TEMP/release-notes.md"

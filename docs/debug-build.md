@@ -40,6 +40,16 @@ Debug 与 Release 的对象不能混用，各保留一套固定增量目录；�
 推送源码后，在该提交上创建并推送 `v*-telegram-ultra.*` 格式的发布标签，
 例如 `v7.3.4-telegram-ultra.1`。
 
+fork 首次使用时，先在仓库 Actions 页面重新启用工作流。已有发布标签需要手动
+触发时，使用包含最新工作流的源码分支：
+
+```sh
+gh workflow run mac_packaged.yml --ref codex/account-network-isolation \
+  -f release_tag=v7.3.4-telegram-ultra.1
+```
+
+该入口只执行 Release，检出的源码以 `release_tag` 为准。
+
 仓库 Actions Secrets 需配置 `TDESKTOP_API_ID` 和 `TDESKTOP_API_HASH`。
 工作流关闭测试 API，使用 Homebrew 依赖构建 macOS arm64 Release，完成依赖打包、
 ad-hoc 签名和校验后发布 GitHub Release。安装包未经过 Apple 公证。

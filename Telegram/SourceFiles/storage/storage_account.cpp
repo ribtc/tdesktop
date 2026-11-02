@@ -212,10 +212,51 @@ QString Account::supportModePath() const {
 	return _databasePath + u"support"_q;
 }
 
+bool Account::validateLocalStorage(const MTP::AuthKeyPtr &key) {
+	const auto hasMap = FileExists(u"map"_q, _basePath);
+	if (hasMap
+		&& readMapWith(key, QByteArray(), true) != ReadMapResult::Success) {
+		return false;
+	}
+	const auto name = ToFilePart(_dataNameKey);
+	if (FileExists(name, BaseGlobalPath())) {
+		auto mtp = FileReadDescriptor();
+		auto encrypted = QByteArray();
+		auto data = EncryptedDescriptor();
+		if (!ReadFile(mtp, name, BaseGlobalPath(), true)) {
+			return false;
+		}
+		mtp.stream >> encrypted;
+		if (!CheckStreamStatus(mtp.stream) || !DecryptLocal(data, encrypted, key)) {
+			return false;
+		}
+		auto context = prepareReadSettingsContext();
+		while (!data.stream.atEnd()) {
+			const auto block = Serialize::read<quint32>(data.stream);
+			if (!CheckStreamStatus(data.stream)
+				|| !ReadSetting(block, data.stream, mtp.version, context)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return !hasMap;
+}
+
 StartResult Account::legacyStart(const QByteArray &passcode) {
 	const auto result = readMapWith(MTP::AuthKeyPtr(), passcode);
 	if (result == ReadMapResult::Failed) {
 		Assert(_localKey == nullptr);
+		if (FileExists(u"map"_q, _basePath)
+			|| FileExists(ToFilePart(_dataNameKey), BaseGlobalPath())) {
+			return StartResult::ReadFailed;
+		}
+		for (const auto &entry : QDir(BaseGlobalPath()).entryInfoList(
+				QDir::Dirs | QDir::NoDotAndDotDot)) {
+			if (FileExists(u"map"_q, entry.absoluteFilePath() + '/')) {
+				return StartResult::ReadFailed;
+			}
+		}
 	} else if (result == ReadMapResult::IncorrectPasscode) {
 		return StartResult::IncorrectPasscodeLegacy;
 	}
@@ -314,11 +355,12 @@ base::flat_set<QString> Account::collectGoodNames() const {
 
 Account::ReadMapResult Account::readMapWith(
 		MTP::AuthKeyPtr localKey,
-		const QByteArray &legacyPasscode) {
+		const QByteArray &legacyPasscode,
+		bool validateOnly) {
 	auto ms = crl::now();
 
 	FileReadDescriptor mapData;
-	if (!ReadFile(mapData, u"map"_q, _basePath)) {
+	if (!ReadFile(mapData, u"map"_q, _basePath, true)) {
 		return ReadMapResult::Failed;
 	}
 	LOG(("App Info: reading map..."));
@@ -542,6 +584,9 @@ Account::ReadMapResult Account::readMapWith(
 		}
 	}
 
+	if (validateOnly) {
+		return ReadMapResult::Success;
+	}
 	_localKey = std::move(localKey);
 
 	_draftsMap = draftsMap;

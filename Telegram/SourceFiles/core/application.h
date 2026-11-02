@@ -382,7 +382,7 @@ private:
 		-> std::shared_ptr<Ui::Emoji::UniversalImages>;
 	void startLocalStorage();
 	void startShortcuts();
-	void startDomain();
+	[[nodiscard]] bool startDomain();
 	void startEmojiImageLoader();
 	void startSystemDarkModeViewer();
 	void startMediaView();

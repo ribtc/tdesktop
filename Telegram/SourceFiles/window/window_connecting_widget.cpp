@@ -214,6 +214,7 @@ bool ConnectionState::State::operator==(const State &other) const {
 		&& (exposed == other.exposed)
 		&& (underCursor == other.underCursor)
 		&& (updateReady == other.updateReady)
+		&& (slow == other.slow)
 		&& (waitTillRetry == other.waitTillRetry);
 }
 
@@ -309,14 +310,14 @@ void ConnectionState::setBottomSkip(int skip) {
 
 void ConnectionState::refreshState() {
 	using Checker = Core::UpdateChecker;
-	const auto state = [&]() -> State {
+	auto state = [&]() -> State {
 		const auto exposed = _parent->window()->windowHandle()
 			&& _parent->window()->windowHandle()->isExposed();
 		const auto under = _widget && _widget->isOver();
 		const auto ready = !Core::UpdaterDisabled()
 			&& (Checker().state() == Checker::State::Ready);
 		const auto state = _account->mtp().dcstate();
-		const auto proxy = true;
+		const auto proxy = !_account->proxyBindingId().isEmpty();
 		if (state == MTP::ConnectingState
 			|| state == MTP::DisconnectedState
 			|| (state < 0 && state > -600)) {
@@ -331,10 +332,25 @@ void ConnectionState::refreshState() {
 		}
 		return { State::Type::Connected, proxy, exposed, under, ready };
 	}();
+	if (!_account->sessionExists()
+		&& state.type != State::Type::Connected
+		&& _account->network().snapshot().allowed()) {
+		if (!_loginConnectingSince) {
+			_loginConnectingSince = crl::now();
+		}
+		const auto elapsed = crl::now() - _loginConnectingSince;
+		state.slow = (elapsed >= 15000);
+		if (!state.slow) {
+			_refreshTimer.callOnce(15000 - elapsed);
+		}
+	} else {
+		_loginConnectingSince = 0;
+	}
 	if (state.exposed && state.waitTillRetry > 0) {
 		_refreshTimer.callOnce(kRefreshTimeout);
 	}
-	if (state == _state) {
+	const auto generation = _account->network().snapshot().generation;
+	if (state == _state && generation == _networkGeneration) {
 		return;
 	} else if (state.type == State::Type::Connecting
 		&& _state.type == State::Type::Connected) {
@@ -352,6 +368,7 @@ void ConnectionState::refreshState() {
 			return;
 		}
 	}
+	_networkGeneration = generation;
 	applyState(state);
 }
 
@@ -451,7 +468,7 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 			|| state.type == State::Type::Waiting);
 	switch (state.type) {
 	case State::Type::Connecting:
-		result.text = state.underCursor
+		result.text = (state.underCursor || !_account->sessionExists())
 			? tr::lng_connecting(tr::now)
 			: QString();
 		break;
@@ -464,10 +481,23 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 			state.waitTillRetry);
 		break;
 	}
-	if (!_account->network().snapshot().allowed()) {
-		result.text = tr::lng_account_proxy_title(tr::now);
+	const auto network = _account->network().snapshot();
+	if (!_account->sessionExists()) {
 		result.visible = state.exposed;
-		result.progressShown = false;
+		if (state.type == State::Type::Connected) {
+			result.text = tr::lng_account_network_connected(tr::now);
+		} else {
+			result.text = state.slow
+				? tr::lng_account_network_slow(tr::now)
+				: tr::lng_account_network_connecting(tr::now);
+		}
+	}
+	if (!network.allowed()) {
+		result.text = (network.state == MTP::NetworkState::Checking)
+			? tr::lng_account_proxy_checking(tr::now)
+			: tr::lng_account_network_action_needed(tr::now);
+		result.visible = state.exposed;
+		result.progressShown = (network.state == MTP::NetworkState::Checking);
 	}
 	result.textWidth = st::normalFont->width(result.text);
 	result.contentWidth = (result.textWidth > 0)
@@ -475,13 +505,13 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 			+ result.textWidth
 			+ st::connectingTextPadding.right())
 		: 0;
-	if (state.type == State::Type::Waiting) {
+	if (state.type == State::Type::Waiting || state.slow) {
 		result.contentWidth += st::connectingRetryLink.padding.left()
 			+ st::connectingRetryLink.font->width(
 				tr::lng_reconnecting_try_now(tr::now))
 			+ st::connectingRetryLink.padding.right();
 	}
-	result.hasRetry = (state.type == State::Type::Waiting);
+	result.hasRetry = (state.type == State::Type::Waiting || state.slow);
 	return result;
 }
 
@@ -648,7 +678,11 @@ void ConnectionState::Widget::refreshRetryLink(bool hasRetry) {
 			tr::lng_reconnecting_try_now(tr::now),
 			st::connectingRetryLink);
 		_retry->addClickHandler([=] {
-			_account->mtp().restart();
+			if (_account->proxyBindingId().isEmpty()) {
+				_account->useDirectConnection();
+			} else {
+				_account->retryProxy();
+			}
 		});
 		updateRetryGeometry();
 	} else if (!hasRetry) {

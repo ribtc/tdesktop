@@ -42,7 +42,7 @@ PreLaunchWindow::PreLaunchWindow(QString title) {
 	setWindowIcon(Window::CreateIcon());
 	setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
 
-	setWindowTitle(title.isEmpty() ? u"Telegram"_q : title);
+	setWindowTitle(title.isEmpty() ? AppDisplayName.utf16() : title);
 
 	QPalette p(palette());
 	p.setColor(QPalette::Window, QColor(255, 255, 255));
@@ -243,11 +243,13 @@ void PreLaunchCheckbox::setText(const QString &text) {
 	resize(sizeHint());
 }
 
-NotStartedWindow::NotStartedWindow()
+NotStartedWindow::NotStartedWindow(const QString &error)
 : _label(this)
 , _log(this)
 , _close(this) {
-	_label.setText(u"Could not start Telegram Desktop!\nYou can see complete log below:"_q);
+	_label.setText(error.isEmpty()
+		? u"Could not start Telegram Desktop!\nYou can see complete log below:"_q
+		: error);
 
 	_log.setPlainText(Logs::full());
 

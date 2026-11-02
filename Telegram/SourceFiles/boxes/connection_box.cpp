@@ -1983,8 +1983,11 @@ void ProxiesBoxController::refreshChecker(Item &item) {
 }
 
 QString AccountProxyStatus(not_null<Main::Account*> account) {
+	if (account->network().snapshot().state == MTP::NetworkState::Direct) {
+		return tr::lng_account_network_direct_status(tr::now);
+	}
 	const auto &library = Core::App().settings().proxyLibrary();
-	if (!library.writable()) {
+	if (!account->proxyBindingId().isEmpty() && !library.writable()) {
 		return tr::lng_account_proxy_library_error(tr::now);
 	}
 	const auto id = account->proxyBindingId();
@@ -2057,6 +2060,8 @@ void ShowAccountProxyEntry(
 			box->addButton(tr::lng_account_proxy_bind(), crl::guard(account, [=] {
 				if (account->bindProxy(entry.id)) {
 					box->closeBox();
+				} else {
+					show->showToast(tr::lng_account_proxy_changed(tr::now));
 				}
 			}));
 		} else {
@@ -2147,20 +2152,37 @@ object_ptr<Ui::BoxContent> MakeAccountProxyBox(not_null<Main::Account*> account)
 			return !change.before;
 		}) | rpl::on_next([=] { refresh(); }, box->lifetime());
 		account->network().changes() | rpl::on_next(refresh, box->lifetime());
+		const auto direct = box->addRow(object_ptr<Ui::SettingsButton>(
+			box,
+			tr::lng_account_network_direct()));
+		direct->setClickedCallback(crl::guard(account, [=] {
+			account->useDirectConnection();
+			show->showToast(tr::lng_account_network_reconnecting(tr::now));
+		}));
 		const auto retry = box->addRow(object_ptr<Ui::SettingsButton>(
 			box,
 			tr::lng_reconnecting_try_now()));
-		retry->setClickedCallback(crl::guard(account, [=] { account->retryProxy(); }));
+		retry->setClickedCallback(crl::guard(account, [=] {
+			if (account->proxyBindingId().isEmpty()) {
+				account->useDirectConnection();
+			} else {
+				account->retryProxy();
+			}
+			show->showToast(tr::lng_account_network_reconnecting(tr::now));
+		}));
 		const auto unbind = box->addRow(object_ptr<Ui::SettingsButton>(
 			box,
 			tr::lng_account_proxy_unbind()));
-		unbind->setClickedCallback(crl::guard(account, [=] { account->unbindProxy(); }));
+		unbind->setClickedCallback(crl::guard(account, [=] {
+			account->unbindProxy();
+			show->showToast(tr::lng_account_proxy_unbound(tr::now));
+		}));
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 		box->addLeftButton(tr::lng_proxy_add(), crl::guard(account, [=] {
 			const auto save = crl::guard(account, [=](ProxyData proxy) {
 				const auto id = Core::App().settings().proxyLibrary().add(proxy);
-				if (!id.isEmpty()) {
-					account->bindProxy(id);
+				if (id.isEmpty() || !account->bindProxy(id)) {
+					show->showToast(tr::lng_account_proxy_changed(tr::now));
 				}
 			});
 			show->showBox(CreateAccountProxyEditBox(ProxyData(), save));

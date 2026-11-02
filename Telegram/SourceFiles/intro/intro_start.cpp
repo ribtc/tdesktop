@@ -7,15 +7,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "intro/intro_start.h"
 
-#include "lang/lang_keys.h"
-#include "intro/intro_qr.h"
+#include "boxes/abstract_box.h"
+#include "boxes/connection_box.h"
+#include "core/version.h"
 #include "intro/intro_phone.h"
+#include "intro/intro_qr.h"
 #include "intro/intro_widget.h"
 #include "intro/session_import_box.h"
-#include "ui/widgets/buttons.h"
-#include "ui/widgets/labels.h"
+#include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_app_config.h"
+#include "mtproto/network_context.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/labels.h"
 #include "window/window_controller.h"
 
 #include "styles/style_intro.h"
@@ -29,8 +33,8 @@ StartWidget::StartWidget(
 	not_null<Data*> data)
 : Step(parent, account, data, true) {
 	setMouseTracking(true);
-	setTitleText(rpl::single(u"Telegram Desktop"_q));
-	setDescriptionText(tr::lng_intro_about());
+	setTitleText(rpl::single(AppDisplayName.utf16()));
+	setDescriptionText(tr::lng_intro_network_about());
 	const auto session = Ui::CreateChild<Ui::LinkButton>(
 		this,
 		tr::lng_session_login(tr::now));
@@ -48,6 +52,12 @@ StartWidget::StartWidget(
 }
 
 void StartWidget::submit() {
+	const auto state = account().network().snapshot().state;
+	if (state == MTP::NetworkState::Unbound
+		|| state == MTP::NetworkState::Failed) {
+		Ui::show(CreateAccountProxyBox(&account()));
+		return;
+	}
 	account().destroyStaleAuthorizationKeys();
 	goNext<QrWidget>();
 }

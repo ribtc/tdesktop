@@ -141,15 +141,15 @@ rpl::lifetime RunCheck(
 }
 
 void PaintColumns(Painter &p, int width, int y, const QStringList &values) {
-	const auto pad = st::proxyManagementPadding;
+	const auto pad = st::managementTablePadding;
 	const auto available = width - 2 * pad;
-	p.setFont(st::normalFont);
+	p.setFont(st::managementTableFont);
 	p.setPen(st::windowFg);
 	const auto weights = std::array{ 24, 10, 11, 17, 8, 13, 10, 7 };
 	auto x = pad;
 	for (auto i = 0; i != int(weights.size()); ++i) {
 		const auto cell = available * weights[i] / 100;
-		p.drawText(x, y, st::normalFont->elided(values[i],
+		p.drawTextLeft(x, y, width, st::managementTableFont->elided(values[i],
 			std::max(0, cell - st::proxyManagementGap)));
 		x += cell;
 	}
@@ -193,8 +193,8 @@ private:
 	object_ptr<Ui::LinkButton> _clipboard;
 	object_ptr<Ui::LinkButton> _dismiss;
 	object_ptr<Ui::AbstractButton> _drop;
-	object_ptr<Ui::LinkButton> _cancel;
-	object_ptr<Ui::LinkButton> _submit;
+	object_ptr<Ui::RoundButton> _cancel;
+	object_ptr<Ui::RoundButton> _submit;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Ui::RpWidget> _body;
 	QPointer<Ui::FlatLabel> _preview;
@@ -220,17 +220,18 @@ private:
 	void check(std::vector<QString> ids);
 	void openImport(bool clipboard);
 	QString status(const Core::ProxyEntry &entry) const;
-	Ui::LinkButton *button(QString text, Fn<void()> callback);
+	Ui::RoundButton *button(QString text, Fn<void()> callback);
 	const not_null<Window::Controller*> _controller;
 	object_ptr<Ui::FlatLabel> _title;
 	object_ptr<Ui::InputField> _search;
 	object_ptr<Ui::FlatLabel> _summary;
+	object_ptr<Ui::FlatLabel> _footer;
 	object_ptr<Ui::RpWidget> _header;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Ui::RpWidget> _rows;
 	object_ptr<ProxyImport> _import = { nullptr };
-	std::vector<Ui::LinkButton*> _tools;
-	std::vector<Ui::LinkButton*> _paging;
+	std::vector<Ui::RoundButton*> _tools;
+	std::vector<Ui::RoundButton*> _paging;
 	base::unique_qptr<Ui::PopupMenu> _menu;
 	Core::ProxyCheckQueue _checks;
 	QMap<QString, Core::ProxyCheckResult> _results;
@@ -252,7 +253,7 @@ ProxyRow::ProxyRow(QWidget *parent, Core::ProxyEntry entry, QString status, Fn<v
 		+ _entry.proxy.user + u"\n"_q + _status;
 	setAccessibleName(description);
 	setToolTip(description);
-	const auto button = Ui::CreateChild<Ui::LinkButton>(this, u"⋯"_q);
+	const auto button = Ui::CreateChild<Ui::LinkButton>(this, u"⋯"_q, st::managementLink);
 	button->setAccessibleName(tr::lng_proxy_management_edit(tr::now));
 	button->setClickedCallback(std::move(actions));
 	sizeValue() | rpl::on_next([=](QSize size) {
@@ -264,40 +265,40 @@ ProxyRow::ProxyRow(QWidget *parent, Core::ProxyEntry entry, QString status, Fn<v
 void ProxyRow::paintEvent(QPaintEvent *event) {
 	auto p = Painter(this);
 	p.fillRect(event->rect(), st::windowBg);
-	const auto pad = st::proxyManagementPadding;
+	const auto pad = st::managementTablePadding;
 	const auto wide = width() >= st::proxyManagementWideTable;
+	const auto top = (height() - 2 * st::managementTableFont->height) / 2;
 	if (wide) {
-		PaintColumns(p, width(), pad, {
+		PaintColumns(p, width(), top, {
 			_entry.notes.isEmpty() ? Endpoint(_entry.proxy) : _entry.notes,
 			TypeText(_entry.proxy), tr::lng_proxy_management_unknown(tr::now),
 			_entry.proxy.host, QString::number(_entry.proxy.port),
 			_entry.proxy.user, QString::number(_bindings), QString(),
 		});
 		p.setPen(st::windowSubTextFg);
-		p.drawText(pad, pad + st::normalFont->height,
-			st::normalFont->elided(_status, (width() - 2 * pad) * 24 / 100));
+		p.drawTextLeft(pad, top + st::managementTableFont->height, width(),
+			st::managementTableFont->elided(_status, (width() - 2 * pad) * 24 / 100));
 	} else {
 		const auto leftWidth = std::max(0, width() - 4 * pad);
-		p.setFont(st::normalFont);
+		p.setFont(st::managementTableFont);
 		p.setPen(st::windowFg);
-		p.drawText(pad, pad, st::normalFont->elided(
+		p.drawTextLeft(pad, top, width(), st::managementTableFont->elided(
 			_entry.notes.isEmpty() ? Endpoint(_entry.proxy) : _entry.notes, leftWidth));
 		p.setPen(st::windowSubTextFg);
-		p.drawText(pad, pad + st::normalFont->height, st::normalFont->elided(
-			(_entry.notes.isEmpty() ? TypeText(_entry.proxy) : Endpoint(_entry.proxy))
-			+ u" · "_q + _status, leftWidth));
-		p.drawText(pad, pad + 2 * st::normalFont->height, st::normalFont->elided(
-			tr::lng_proxy_management_bindings(tr::now, lt_amount, QString::number(_bindings))
-			+ u" · "_q + tr::lng_proxy_management_hidden(tr::now), leftWidth));
+		p.drawTextLeft(pad, top + st::managementTableFont->height, width(), st::managementTableFont->elided(
+			TypeText(_entry.proxy) + u" · "_q + _status + u" · "_q
+			+ tr::lng_proxy_management_bindings(tr::now, lt_amount, QString::number(_bindings)), leftWidth));
 	}
 	p.fillRect(0, height() - st::lineWidth, width(), st::lineWidth, st::shadowFg);
+	p.fillRect(0, 0, st::lineWidth, height(), st::shadowFg);
+	p.fillRect(width() - st::lineWidth, 0, st::lineWidth, height(), st::shadowFg);
 }
 
 ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controller, Fn<void()> close)
 : RpWidget(parent)
 , _controller(controller)
 , _close(std::move(close))
-, _title(this, tr::lng_proxy_management_import_title(), st::defaultFlatLabel)
+, _title(this, tr::lng_proxy_management_import_title(), st::managementTitle)
 , _hint(this, tr::lng_proxy_management_import_hint(), st::boxLabel)
 , _ipv6(this, tr::lng_proxy_management_family(tr::now), false)
 , _family(this, tr::lng_proxy_management_family_hint(), st::boxLabel)
@@ -305,8 +306,8 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 , _clipboard(this, tr::lng_proxy_management_clipboard(tr::now))
 , _dismiss(this, u"×"_q)
 , _drop(this)
-, _cancel(this, tr::lng_cancel(tr::now))
-, _submit(this, tr::lng_proxy_management_import_confirm(tr::now))
+, _cancel(this, tr::lng_cancel(), st::managementButton)
+, _submit(this, tr::lng_proxy_management_import_confirm(), st::managementPrimaryButton)
 , _scroll(this, st::defaultScrollArea) {
 	setFocusPolicy(Qt::StrongFocus);
 	setAcceptDrops(true);
@@ -324,7 +325,7 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 	_drop->setAccessibleName(tr::lng_proxy_management_choose_file(tr::now));
 	_drop->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(_drop);
-		p.fillRect(_drop->rect(), st::boxBg);
+		p.fillRect(_drop->rect(), st::windowBgOver);
 		auto pen = st::windowSubTextFg->p;
 		pen.setStyle(Qt::DashLine);
 		p.setPen(pen);
@@ -341,8 +342,10 @@ ProxyImport::ProxyImport(QWidget *parent, not_null<Window::Controller*> controll
 		p.fillRect(clip, st::layerBg);
 		const auto x = std::max(0, width() - st::proxyManagementDrawerWidth);
 		p.fillRect(QRect(x, 0, width() - x, height()), st::windowBg);
+		p.fillRect(x, st::managementHeaderHeight - st::lineWidth, width() - x, st::lineWidth, st::shadowFg);
 	}, lifetime());
 	sizeValue() | rpl::on_next([=] { layout(); }, lifetime());
+	style::PaletteChanged() | rpl::on_next([=] { layout(); }, lifetime());
 	preview();
 }
 
@@ -419,10 +422,12 @@ void ProxyImport::layout() {
 	const auto left = std::max(0, width() - st::proxyManagementDrawerWidth) + pad;
 	const auto inner = std::max(1, width() - left - pad);
 	_title->resizeToWidth(std::max(1, inner - _dismiss->width() - pad));
-	_title->move(left, pad);
+	_title->move(left, (st::managementHeaderHeight - _title->height()) / 2);
 	_dismiss->move(width() - pad - _dismiss->width(), pad);
-	const auto top = 2 * pad + _title->height();
+	const auto top = st::managementHeaderHeight + pad;
 	const auto bottom = height() - pad - _submit->height();
+	_cancel->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
+	_submit->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	_cancel->move(left, bottom);
 	_submit->move(width() - pad - _submit->width(), bottom);
 	_scroll->setGeometry(left, top, inner, std::max(0, bottom - pad - top));
@@ -493,9 +498,10 @@ void ProxyImport::dropEvent(QDropEvent *event) {
 ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _title(this, tr::lng_proxy_management_title(), st::defaultFlatLabel)
-, _search(this, st::defaultInputField, tr::lng_proxy_management_search())
-, _summary(this, QString(), st::defaultFlatLabel)
+, _title(this, tr::lng_proxy_management_title(), st::managementTitle)
+, _search(this, st::managementSearch, tr::lng_proxy_management_search())
+, _summary(this, QString(), st::managementCaption)
+, _footer(this, QString(), st::managementCaption)
 , _header(this)
 , _scroll(this, st::defaultScrollArea)
 , _checks([=](const Core::ProxyEntry &entry, Fn<void(int)> done) {
@@ -504,11 +510,12 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 	paintRequest() | rpl::on_next([=](QRect clip) {
 		auto p = QPainter(this);
 		p.fillRect(clip, st::windowBg);
+		p.fillRect(0, st::managementHeaderHeight - st::lineWidth, width(), st::lineWidth, st::shadowFg);
 	}, lifetime());
 	_header->paintRequest() | rpl::on_next([=] {
 		auto p = Painter(_header);
-		p.fillRect(_header->rect(), st::boxBg);
-		PaintColumns(p, _header->width(), st::proxyManagementPadding, {
+		p.fillRect(_header->rect(), st::windowBgOver);
+		PaintColumns(p, _header->width(), (_header->height() - st::managementTableFont->height) / 2, {
 			tr::lng_proxy_management_column_notes(tr::now),
 			tr::lng_proxy_management_column_type(tr::now),
 			tr::lng_proxy_management_column_country(tr::now), u"IP"_q,
@@ -539,6 +546,14 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 	_tools.push_back(button(tr::lng_proxy_management_cancel_check(tr::now), [=] { _checks.cancel(); }));
 	_paging.push_back(button(tr::lng_proxy_management_previous(tr::now), [=] { --_page; rebuild(); }));
 	_paging.push_back(button(tr::lng_proxy_management_next(tr::now), [=] { ++_page; rebuild(); }));
+	const auto searchIcon = Ui::CreateChild<Ui::RpWidget>(_search.data());
+	searchIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+	searchIcon->resize(st::managementSearchHeight, st::managementSearchHeight);
+	searchIcon->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(searchIcon);
+		st::managementSearchIcon.paintInCenter(p, searchIcon->rect());
+	}, searchIcon->lifetime());
+
 	_search->changes() | rpl::on_next([=] { _page = 0; scheduleRebuild(); }, lifetime());
 	Library().changes() | rpl::on_next([=](Core::ProxyLibraryChange change) {
 		if (change.connection) {
@@ -558,15 +573,18 @@ ProxyManagement::ProxyManagement(QWidget *parent, not_null<Window::Controller*> 
 	}, lifetime());
 	Core::App().domain().accountsChanges() | rpl::on_next([=] { watchAccounts(); }, lifetime());
 	sizeValue() | rpl::on_next([=] { layout(); }, lifetime());
+	style::PaletteChanged() | rpl::on_next([=] { layout(); }, lifetime());
 	watchAccounts();
 }
 
 ProxyManagement::~ProxyManagement() {
+	_import.destroy();
 	_checks.cancel();
 }
 
-Ui::LinkButton *ProxyManagement::button(QString text, Fn<void()> callback) {
-	const auto result = Ui::CreateChild<Ui::LinkButton>(this, text);
+Ui::RoundButton *ProxyManagement::button(QString text, Fn<void()> callback) {
+	const auto result = Ui::CreateChild<Ui::RoundButton>(this, rpl::single(text), st::managementButton);
+	result->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	result->setClickedCallback(std::move(callback));
 	return result;
 }
@@ -637,8 +655,6 @@ void ProxyManagement::rebuild() {
 	_scroll->setOwnedWidget(std::move(rows));
 	_summary->setText(Library().writable()
 		? tr::lng_proxy_management_summary(tr::now, lt_amount, QString::number(entries.size()))
-			+ u" · "_q + tr::lng_proxy_management_page(tr::now, lt_amount, QString::number(_page + 1))
-			+ u" / "_q + QString::number(_pages)
 		: tr::lng_proxy_management_readonly(tr::now));
 	for (auto i = 0; i != 4; ++i) {
 		_tools[i]->setDisabled(!Library().writable());
@@ -650,41 +666,65 @@ void ProxyManagement::rebuild() {
 
 void ProxyManagement::layout() {
 	const auto pad = st::proxyManagementPadding;
+	const auto gap = st::proxyManagementGap;
 	const auto inner = std::max(1, width() - 2 * pad);
+	const auto header = st::managementHeaderHeight;
 	_title->resizeToWidth(inner);
-	_title->move(pad, pad);
-	auto y = pad + _title->height() + pad;
+	_title->move(pad, gap / 2);
+	_summary->resizeToWidth(inner);
+	_summary->move(pad, header - gap / 2 - _summary->height());
+	auto y = header + gap;
 	auto x = pad;
-	for (const auto tool : _tools) {
+	for (auto i = 0; i != int(_tools.size()); ++i) {
+		const auto tool = _tools[i];
 		if (x > pad && x + tool->width() > width() - pad) {
 			x = pad;
 			y += st::proxyManagementControlHeight;
 		}
 		tool->move(x, y);
-		x += tool->width() + st::proxyManagementGap;
+		if (i == 0) {
+			tool->setBrushOverride(st::activeButtonBg->b);
+			tool->setTextFgOverride(st::activeButtonFg->c);
+		} else if (i == 3) {
+			tool->setTextFgOverride(st::attentionButtonFg->c);
+		}
+		x += tool->width() + gap / 2;
 	}
-	y += st::proxyManagementControlHeight;
-	_search->resizeToWidth(inner);
-	_search->move(pad, y);
-	y += _search->height() + pad;
-	_summary->resizeToWidth(inner);
-	_summary->move(pad, y);
-	y += _summary->height() + pad;
+	const auto searchWidth = st::managementNavigationWidth;
+	if (width() - pad - x >= searchWidth) {
+		_search->resizeToWidth(searchWidth);
+		_search->move(width() - pad - searchWidth, y);
+		y += st::managementSearchHeight + gap;
+	} else {
+		y += st::proxyManagementControlHeight;
+		_search->resizeToWidth(inner);
+		_search->move(pad, y);
+		y += st::managementSearchHeight + gap;
+	}
 	const auto wide = inner >= st::proxyManagementWideTable;
 	_header->setVisible(wide);
 	if (wide) {
-		_header->setGeometry(pad, y, inner, st::proxyManagementControlHeight);
-		y += st::proxyManagementControlHeight;
+		_header->setGeometry(pad, y, inner, st::managementTableHeaderHeight);
+		y += st::managementTableHeaderHeight;
 	}
-	const auto bottom = height() - pad - st::proxyManagementControlHeight;
-	_scroll->setGeometry(pad, y, inner, std::max(0, bottom - y));
+	const auto contentHeight = _rows ? _rows->height() : 0;
+	const auto tableHeight = std::min(contentHeight,
+		std::max(0, height() - y - pad - gap - st::proxyManagementControlHeight));
+	_scroll->setGeometry(pad, y, inner, tableHeight);
 	if (_rows) {
-		_rows->resize(inner, _rows->height());
+		_rows->resize(inner, contentHeight);
 	}
-	_paging[0]->move(pad, bottom + st::proxyManagementGap);
-	_paging[1]->move(width() - pad - _paging[1]->width(), bottom + st::proxyManagementGap);
+	y += tableHeight + gap;
+	_footer->setText(tr::lng_proxy_management_page(tr::now, lt_amount, QString::number(_page + 1))
+		+ u" / "_q + QString::number(_pages));
+	_footer->resizeToWidth(std::max(1, inner / 2));
+	_footer->move(pad, y + gap / 2);
+	_paging[0]->setText(rpl::single(u"‹"_q));
+	_paging[1]->setText(rpl::single(u"›"_q));
+	_paging[1]->move(width() - pad - _paging[1]->width(), y);
+	_paging[0]->move(_paging[1]->x() - gap - _paging[0]->width(), y);
 	if (_import) {
-		_import->setGeometry(rect());
+		_import->setGeometry(_import->parentWidget()->rect());
 	}
 }
 
@@ -828,11 +868,11 @@ void ProxyManagement::check(std::vector<QString> ids) {
 }
 
 void ProxyManagement::openImport(bool clipboard) {
-	_import = object_ptr<ProxyImport>(this, _controller, [=] {
+	_import = object_ptr<ProxyImport>(parentWidget() ? parentWidget() : this, _controller, [=] {
 		_import.destroyDelayed();
 		_search->setFocus();
 	});
-	_import->setGeometry(rect());
+	_import->setGeometry(_import->parentWidget()->rect());
 	_import->show();
 	_import->raise();
 	_import->setFocus();

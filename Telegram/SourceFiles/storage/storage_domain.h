@@ -86,6 +86,7 @@ enum class StartResult : uchar {
 	Success,
 	IncorrectPasscode,
 	IncorrectPasscodeLegacy,
+	ReadFailed,
 };
 
 enum class SetPasscodeResult : uchar {

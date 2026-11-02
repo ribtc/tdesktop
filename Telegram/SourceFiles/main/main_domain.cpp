@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "core/shortcuts.h"
 #include "core/crash_reports.h"
+#include "core/crash_report_window.h"
+#include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -97,6 +99,10 @@ Storage::StartResult Domain::startWith(
 		crl::on_main(&Core::App(), [=] { suggestExportIfNeeded(); });
 	} else {
 		Assert(!started());
+		if (result == Storage::StartResult::ReadFailed) {
+			LOG(("FATAL: Existing account data could not be read. No new local key was created."));
+			new NotStartedWindow(tr::lng_storage_start_failed(tr::now));
+		}
 	}
 	return result;
 }

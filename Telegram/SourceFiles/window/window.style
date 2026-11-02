@@ -445,10 +445,10 @@ macWindowRoundRadius: 10;
 macWindowShadowTopLeft: icon {{ "mac_window_shadow_top_left", windowShadowFg }};
 macTrayIcon: icon {{ "mac_tray_icon", windowFg }};
 
-proxyManagementPadding: 20px;
+proxyManagementPadding: 22px;
 proxyManagementGap: 12px;
 proxyManagementControlHeight: 42px;
-proxyManagementRowHeight: 72px;
+proxyManagementRowHeight: 50px;
 proxyManagementWideTable: 780px;
 proxyManagementColumnWidth: 110px;
 proxyManagementDrawerWidth: 560px;

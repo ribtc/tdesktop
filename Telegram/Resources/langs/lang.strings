@@ -9341,15 +9341,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // Keys finished
 
-"lng_account_proxy_title" = "Account proxy";
-"lng_account_proxy_unbound" = "Network blocked. Bind a proxy before signing in or connecting.";
+"lng_account_proxy_title" = "Connection settings";
+"lng_account_proxy_unbound" = "Network stopped. Choose Direct connection or bind a proxy to resume.";
 "lng_account_proxy_checking" = "Checking this account's proxy…";
 "lng_account_proxy_ready" = "Proxy verified";
-"lng_account_proxy_failed" = "Network blocked. Proxy verification failed; retry or select another proxy.";
+"lng_account_proxy_failed" = "Proxy verification failed. Retry, choose another proxy, or switch to Direct connection.";
 "lng_account_proxy_unsupported" = "Unsupported configuration. Use SOCKS5 or MTProto with a numeric IP address.";
 "lng_account_proxy_library_error" = "The saved proxy library cannot be read. Original data has been preserved; network access remains blocked.";
 "lng_account_proxy_bind" = "Bind to this account";
-"lng_account_proxy_unbind" = "Unbind and block network";
+"lng_account_proxy_unbind" = "Unbind and stop network";
 "lng_account_proxy_shared#one" = "This proxy is bound to {count} account. Accounts sharing it may share the same network exit.";
 "lng_account_proxy_shared#other" = "This proxy is bound to {count} accounts. Accounts sharing it may share the same network exit.";
 "lng_account_proxy_edit_warning#one" = "Changing or deleting this proxy will disconnect the {count} account bound to it.";
@@ -9474,6 +9474,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_account_wallet_blocked" = "Wallet live updates require an active SOCKS5 account proxy. Periodic synchronization remains available.";
 "lng_proxy_management_file_filter" = "Text (*.txt);;All files (*)";
 
+"lng_management_title" = "Enhanced features";
+"lng_management_subtitle" = "{amount} accounts · Groups and bulk actions";
+"lng_management_selected_count" = "{amount} selected";
+"lng_management_status_column" = "Isolation status";
+"lng_management_status_ready" = "Verified";
+"lng_management_status_unbound" = "Unbound";
+"lng_management_status_failed" = "Proxy failed";
+"lng_management_status_checking" = "Checking";
+"lng_management_range" = "{current} / {total} · {amount} per page";
+"lng_management_current_account" = "Current account · {name}";
+
+"lng_storage_start_failed" = "Existing account data could not be read. TelegramUltra has stopped loading it to avoid overwriting it.\nCheck the data directory and application version. No new account key was created.";
+
 "lng_protection_title" = "Protection";
 "lng_protection_heading" = "Account security and message protection";
 "lng_protection_about" = "Configure protection for the selected account group.";
@@ -9516,6 +9529,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_protection_preview_open" = "Open chat and mark as read";
 "lng_protection_storage_error" = "Protection data could not be read. Existing records were preserved; settings are unavailable.";
 
+"lng_account_network_direct" = "Direct connection (no proxy)";
+
+"lng_account_network_direct_status" = "Direct connection selected. If Telegram is unreachable, you can add a proxy here.";
+
+"lng_account_network_reconnecting" = "Reconnecting…";
+
+"lng_account_network_connected" = "Connected · Connection settings";
+
+"lng_account_network_connecting" = "Connecting… · Connection settings";
+
+"lng_account_network_action_needed" = "Network stopped · Connection settings";
+
+"lng_intro_network_about" = "Sign in with a QR code or phone number. No proxy is required. If connecting takes too long, open Connection settings below to retry or add a proxy.";
+
+"lng_account_network_slow" = "Connection is taking longer · Network settings";
+
 "lng_session_login" = "Log in with Session";
 "lng_session_import_about" = "Import Telethon .session files. A matching JSON proxy is used and bound automatically; without proxy metadata, the current account’s connection is used. Closing stops unfinished imports.";
 "lng_session_waiting" = "Waiting";
@@ -9531,16 +9560,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_session_cancelled" = "Import cancelled";
 "lng_session_batch_limit" = "Select at most 100 session files at a time.";
 
-"lng_management_title" = "Enhanced features";
-"lng_management_subtitle" = "{amount} accounts · Groups and bulk actions";
-"lng_management_selected_count" = "{amount} selected";
-"lng_management_status_column" = "Isolation status";
-"lng_management_status_ready" = "Verified";
-"lng_management_status_unbound" = "Unbound";
-"lng_management_status_failed" = "Proxy failed";
-"lng_management_status_checking" = "Checking";
-"lng_management_range" = "{current} / {total} · {amount} per page";
-"lng_management_current_account" = "Current account · {name}";
 "lng_management_library" = "Account library";
 "lng_management_number" = "No.";
 "lng_management_tags_column" = "Tags";

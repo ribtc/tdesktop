@@ -89,6 +89,7 @@ public:
 	[[nodiscard]] bool pendingLogin() const;
 	bool bindProxy(const QString &id);
 	void unbindProxy();
+	void useDirectConnection();
 	void cancelPendingLogin();
 	void retryProxy();
 

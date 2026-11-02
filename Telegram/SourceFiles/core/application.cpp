@@ -414,7 +414,9 @@ void Application::run() {
 
 	DEBUG_LOG(("Application Info: window created..."));
 
-	startDomain();
+	if (!startDomain()) {
+		return;
+	}
 	startTray();
 
 	_lastActivePrimaryWindow->firstShow();
@@ -520,8 +522,11 @@ void Application::showOpenGLCrashNotification() {
 	}));
 }
 
-void Application::startDomain() {
+bool Application::startDomain() {
 	const auto state = _domain->start(QByteArray());
+	if (state == Storage::StartResult::ReadFailed) {
+		return false;
+	}
 	if (state != Storage::StartResult::IncorrectPasscodeLegacy) {
 		// In case of non-legacy passcoded app all global settings are ready.
 		startSettingsAndBackground();
@@ -530,6 +535,7 @@ void Application::startDomain() {
 		lockByPasscode();
 		DEBUG_LOG(("Application Info: passcode needed..."));
 	}
+	return true;
 }
 
 void Application::startSettingsAndBackground() {
@@ -2099,8 +2105,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"Telegram Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
@@ -2110,8 +2116,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"TonSite Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
@@ -2121,8 +2127,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"Ton Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 }
 

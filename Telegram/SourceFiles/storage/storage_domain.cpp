@@ -339,9 +339,7 @@ StartResult Domain::start(PasscodeDerivation derived) {
 	} else if (modern == StartModernResult::IncorrectPasscode) {
 		return StartResult::IncorrectPasscode;
 	} else if (modern == StartModernResult::Failed) {
-		// startFromScratch() drops a local key startModern() already read.
-		startFromScratch();
-		return StartResult::Success;
+		return StartResult::ReadFailed;
 	}
 	auto legacy = std::make_unique<Main::Account>(_owner, _dataName, 0);
 	const auto result = legacy->legacyStart(derived._passcode);
@@ -494,8 +492,10 @@ Domain::StartModernResult Domain::startModern(
 	const auto name = ComputeKeyName(_dataName);
 
 	FileReadDescriptor file;
-	if (!ReadFile(file, name, BaseGlobalPath())) {
-		return StartModernResult::Empty;
+	if (!ReadFile(file, name, BaseGlobalPath(), true)) {
+		return FileExists(name, BaseGlobalPath())
+			? StartModernResult::Failed
+			: StartModernResult::Empty;
 	}
 	LOG(("App Info: reading accounts info..."));
 
@@ -577,7 +577,9 @@ Domain::StartModernResult Domain::startModern(
 	if (!DecryptLocal(keyInnerData, localKeyEncrypted, wrapKey)) {
 		LOG(("App Info: could not decrypt pass-protected key from info file, "
 			"maybe bad password..."));
-		return StartModernResult::IncorrectPasscode;
+		return (!_keyData->legacy && _keyData->passcodeWraps.empty())
+			? StartModernResult::Failed
+			: StartModernResult::IncorrectPasscode;
 	}
 	// An authentic envelope that does not hold a local key cannot be told
 	// from an overwritten open field by the empty start alone, so while a
@@ -633,14 +635,20 @@ Domain::StartModernResult Domain::startModern(
 
 	_oldVersion = file.version;
 
+	auto accounts = std::vector<std::unique_ptr<Main::Account>>();
+	for (const auto index : accountIndex->indices) {
+		auto account = std::make_unique<Main::Account>(_owner, _dataName, index);
+		if (!account->local().validateLocalStorage(_localKey)) {
+			LOG(("App Error: account storage could not be read; initialization stopped."));
+			return StartModernResult::Failed;
+		}
+		accounts.push_back(std::move(account));
+	}
 	auto sessions = base::flat_set<uint64>();
-	const auto count = int(accountIndex->indices.size());
+	const auto count = int(accounts.size());
 	for (auto i = 0; i != count; ++i) {
 		const auto index = accountIndex->indices[i];
-		auto account = std::make_unique<Main::Account>(
-			_owner,
-			_dataName,
-			index);
+		auto account = std::move(accounts[i]);
 		auto config = account->prepareToStart(_localKey);
 		const auto sessionId = account->willHaveSessionUniqueId(
 			config.get());

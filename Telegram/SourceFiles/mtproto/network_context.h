@@ -26,6 +26,7 @@ enum class NetworkState {
 	Ready,
 	Failed,
 	Legacy,
+	Direct,
 };
 
 struct NetworkSnapshot {
@@ -62,6 +63,7 @@ public:
 		ProxyData proxy,
 		bool tryIPv6);
 	void block();
+	void useDirect(bool tryIPv6);
 	void applyLegacy(ProxyData proxy, bool enabled, bool tryIPv6);
 	bool updateResolved(
 		const NetworkSnapshot &request,

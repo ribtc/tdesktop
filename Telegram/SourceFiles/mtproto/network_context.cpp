@@ -17,10 +17,15 @@ bool NetworkSnapshot::current() const {
 
 bool NetworkSnapshot::allowed() const {
 	return current()
-		&& (state == NetworkState::Legacy || state == NetworkState::Ready);
+		&& (state == NetworkState::Legacy
+			|| state == NetworkState::Ready
+			|| state == NetworkState::Direct);
 }
 
 std::optional<QNetworkProxy> NetworkSnapshot::httpProxy() const {
+	if (allowed() && state == NetworkState::Direct) {
+		return QNetworkProxy(QNetworkProxy::NoProxy);
+	}
 	if (!allowed()
 		|| proxy.type != ProxyData::Type::Socks5
 		|| !proxy.valid()
@@ -73,6 +78,13 @@ NetworkSnapshot NetworkContext::bind(
 		: NetworkState::Checking;
 	replace(std::move(next));
 	return snapshot();
+}
+
+void NetworkContext::useDirect(bool tryIPv6) {
+	auto next = NetworkSnapshot();
+	next.state = NetworkState::Direct;
+	next.tryIPv6 = tryIPv6;
+	replace(std::move(next));
 }
 
 void NetworkContext::block() {

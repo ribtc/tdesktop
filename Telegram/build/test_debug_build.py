@@ -109,6 +109,36 @@ class DebugBuildTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 build.require_idle(self.out, building=True)
 
+    def test_release_build_protects_its_executable(self):
+        exe = self.out / 'Release/Telegram.app/Contents/MacOS/Telegram'
+        with patch.object(build, 'processes', return_value=[(123, str(exe))]):
+            build.require_idle(self.out, building=True)
+            with self.assertRaises(RuntimeError):
+                build.require_idle(self.out, building=True, build_config='Release')
+
+    def test_release_cleanup_preserves_objects_and_other_configuration(self):
+        temporary = self.file('build/Telegram.build/Release/chat-1234abcd.o.tmp')
+        protected = [self.file(name) for name in (
+            'build/Telegram.build/Release/chat.o',
+            'build/Telegram.build/Debug/chat-1234abcd.o.tmp',
+            'Release/Telegram.app/Contents/MacOS/Telegram',
+            'Release/TelegramForcePortable/tdata/key_data',
+        )]
+        build.prune(self.out, build_config='Release')
+        self.assertFalse(temporary.exists())
+        self.assertTrue(all(path.read_bytes() == b'keep' for path in protected))
+
+    def test_configuration_must_exist_in_selected_tree(self):
+        self.file('CMakeCache.txt', (
+            'CMAKE_GENERATOR:INTERNAL=Xcode\n'
+            'CMAKE_HOME_DIRECTORY:INTERNAL=%s\n'
+            'CMAKE_CONFIGURATION_TYPES:STRING=Release\n'
+            'CMAKE_COMMAND:INTERNAL=/usr/bin/cmake\n' % self.root).encode())
+        (self.out / 'Telegram.xcodeproj').mkdir()
+        self.assertEqual(build.configuration(self.out, self.root, 'Release'), '/usr/bin/cmake')
+        with self.assertRaises(RuntimeError):
+            build.configuration(self.out, self.root)
+
     def test_foreign_checkout_is_refused(self):
         self.file('CMakeCache.txt', (
             'CMAKE_GENERATOR:INTERNAL=Xcode\n'
@@ -139,6 +169,7 @@ class DebugBuildTests(unittest.TestCase):
                 'buildSettings': {'OTHER_LDFLAGS': [str(release)]}},
         }}
         self.assertEqual(build.missing_inputs(project, self.out), [missing])
+        self.assertEqual(build.missing_inputs(project, self.out, 'Release'), [release])
         missing.parent.mkdir()
         missing.write_bytes(b'archive')
         self.assertEqual(build.missing_inputs(project, self.out), [])
@@ -150,6 +181,16 @@ class DebugBuildTests(unittest.TestCase):
                 'print("link failed"); raise SystemExit(7)'], self.root, logger)
         self.assertEqual(code, 7)
         self.assertIn('link failed', log.read_text())
+
+    def test_failed_packaging_preserves_previous_archive_and_removes_staging(self):
+        archive = self.file('TelegramUltra-macOS-arm64-Release.zip')
+        with patch.object(build.subprocess, 'check_output', return_value='arm64\n'):
+            with patch.object(build.subprocess, 'run',
+                    side_effect=subprocess.CalledProcessError(1, 'ditto')):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    build.package_release(self.out / 'release-build', self.root)
+        self.assertEqual(archive.read_bytes(), b'keep')
+        self.assertEqual(list(self.out.glob('.release-package-*')), [])
 
     def test_cancel_stops_descendant_after_parent_exits(self):
         child = ('import os, signal, time; '

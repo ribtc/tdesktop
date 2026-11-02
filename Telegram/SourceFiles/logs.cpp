@@ -290,53 +290,19 @@ namespace {
 
 bool DebugModeEnabled = false;
 
-[[maybe_unused]] void MoveOldDataFiles(const QString &wasDir) {
-	if (wasDir.isEmpty()) {
-		return;
-	}
-	QFile data(wasDir + "data"), dataConfig(wasDir + "data_config"), tdataConfig(wasDir + "tdata/config");
-	if (data.exists() && dataConfig.exists() && !QFileInfo::exists(cWorkingDir() + "data") && !QFileInfo::exists(cWorkingDir() + "data_config")) { // move to home dir
-		LOG(("Copying data to home dir '%1' from '%2'").arg(cWorkingDir(), wasDir));
-		if (data.copy(cWorkingDir() + "data")) {
-			LOG(("Copied 'data' to home dir"));
-			if (dataConfig.copy(cWorkingDir() + "data_config")) {
-				LOG(("Copied 'data_config' to home dir"));
-				bool tdataGood = true;
-				if (tdataConfig.exists()) {
-					tdataGood = false;
-					QDir().mkpath(cWorkingDir() + "tdata");
-					if (tdataConfig.copy(cWorkingDir() + "tdata/config")) {
-						LOG(("Copied 'tdata/config' to home dir"));
-						tdataGood = true;
-					} else {
-						LOG(("Copied 'data' and 'data_config', but could not copy 'tdata/config'!"));
-					}
-				}
-				if (tdataGood) {
-					if (data.remove()) {
-						LOG(("Removed 'data'"));
-					} else {
-						LOG(("Could not remove 'data'"));
-					}
-					if (dataConfig.remove()) {
-						LOG(("Removed 'data_config'"));
-					} else {
-						LOG(("Could not remove 'data_config'"));
-					}
-					if (!tdataConfig.exists() || tdataConfig.remove()) {
-						LOG(("Removed 'tdata/config'"));
-					} else {
-						LOG(("Could not remove 'tdata/config'"));
-					}
-					QDir().rmdir(wasDir + "tdata");
-				}
-			} else {
-				LOG(("Copied 'data', but could not copy 'data_config'!!"));
-			}
-		} else {
-			LOG(("Could not copy 'data'!"));
+[[nodiscard]] QString ResolveWorkingPath(QString path) {
+	path = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+	auto suffix = QString();
+	while (!QFileInfo::exists(path)) {
+		const auto info = QFileInfo(path);
+		suffix = '/' + info.fileName() + suffix;
+		const auto parent = info.absolutePath();
+		if (parent == path) {
+			return path + suffix;
 		}
+		path = parent;
 	}
+	return QFileInfo(path).canonicalFilePath() + suffix;
 }
 
 } // namespace
@@ -363,19 +329,22 @@ void start() {
 
 	LogsData = new LogsDataFields();
 	if (cWorkingDir().isEmpty()) {
-#if (!defined Q_OS_WIN && !defined _DEBUG) || defined Q_OS_WINRT || defined OS_WIN_STORE || defined OS_MAC_STORE
 		cForceWorkingDir(psAppDataPath());
-#else // (!Q_OS_WIN && !_DEBUG) || Q_OS_WINRT || OS_WIN_STORE || OS_MAC_STORE
-		cForceWorkingDir(cExeDir());
-		if (!LogsData->openMain()) {
-			cForceWorkingDir(psAppDataPath());
-		}
-#endif // (!Q_OS_WIN && !_DEBUG) || Q_OS_WINRT || OS_WIN_STORE || OS_MAC_STORE
 	}
 
 	if (launcher.validateCustomWorkingDir()) {
 		delete LogsData;
 		LogsData = new LogsDataFields();
+	}
+	const auto original = ResolveWorkingPath(psAppDataPath() + u"../"_q
+		+ AppName.utf16());
+	const auto selected = ResolveWorkingPath(cWorkingDir());
+	if (!original.isEmpty()
+		&& (selected == original || selected.startsWith(original + '/'))) {
+		delete LogsData;
+		LogsData = nullptr;
+		LOG(("FATAL: TelegramUltra cannot use the Telegram Desktop data directory."));
+		return;
 	}
 
 // WinRT build requires the working dir to stay the same for plugin loading.
@@ -411,14 +380,6 @@ void start() {
 			).arg(_logsFilePath(LogDataMain, u"_startXX"_q)));
 		return;
 	}
-
-#ifdef Q_OS_WIN
-	if (cWorkingDir() == psAppDataPath()) { // fix old "Telegram Win (Unofficial)" version
-		MoveOldDataFiles(psAppDataPathOld());
-	}
-#elif !defined Q_OS_MAC && !defined _DEBUG // fix first version
-	MoveOldDataFiles(launcher.initialWorkingDir());
-#endif
 
 	if (LogsInMemory) {
 		Assert(LogsInMemory != DeletedLogsInMemory);

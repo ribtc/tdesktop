@@ -50,6 +50,7 @@ private:
 		bool underCursor = false;
 		bool updateReady = false;
 		int waitTillRetry = 0;
+		bool slow = false;
 
 		bool operator==(const State &other) const;
 
@@ -85,8 +86,10 @@ private:
 	bool _forceHidden = false;
 	base::Timer _refreshTimer;
 	State _state;
+	uint64 _networkGeneration = 0;
 	Layout _currentLayout;
 	crl::time _connectingStartedAt = 0;
+	crl::time _loginConnectingSince = 0;
 	Ui::Animations::Simple _contentWidth;
 	Ui::Animations::Simple _visibility;
 

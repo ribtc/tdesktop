@@ -1602,7 +1602,7 @@ void NativeManager::doShowNotification(NotificationFields &&fields) {
 			: name;
 	};
 	const auto title = options.hideNameAndPhoto
-		? AppName.utf16()
+		? AppDisplayName.utf16()
 		: (scheduled && peer->isSelf())
 		? tr::lng_notification_reminder(tr::now)
 		: subWithChat();

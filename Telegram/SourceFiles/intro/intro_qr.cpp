@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "main/main_app_config.h"
 #include "main/main_account.h"
+#include "mtproto/network_context.h"
 #include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "core/core_cloud_password.h"
@@ -228,6 +229,16 @@ QrWidget::QrWidget(
 	) | rpl::on_next([=] {
 		api().request(base::take(_requestId)).cancel();
 		refreshCode();
+	}, lifetime());
+
+	account->network().changes() | rpl::on_next([=] {
+		if (account->network().snapshot().allowed()
+			&& !_stopped
+			&& !_requestId
+			&& !_refreshTimer.isActive()) {
+			hideError();
+			refreshCode();
+		}
 	}, lifetime());
 
 	account->appConfig().value(

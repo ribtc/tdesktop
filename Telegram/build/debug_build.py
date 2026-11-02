@@ -12,7 +12,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 
 
 GIB = 1024 ** 3
@@ -21,21 +23,23 @@ TEMPORARY_FILE = re.compile(r'(?:.+-[0-9a-f]{8}\.o\.tmp|lib.+\.a\.[A-Za-z0-9]{6}
 DESCRIPTION = re.compile(r'[0-9a-f]{32}\.xcbuilddata')
 
 
-def configuration(out, checkout):
+def configuration(out, checkout, build_config='Debug'):
     if out.is_symlink() or (out / 'build').is_symlink():
         raise RuntimeError('构建目录不能是符号链接。')
     cache = out / 'CMakeCache.txt'
     if not cache.is_file() or not (out / 'Telegram.xcodeproj').is_dir():
-        raise RuntimeError('未找到已配置的 out/Telegram.xcodeproj。')
+        raise RuntimeError('未找到已配置的 Xcode 构建目录：' + str(out))
     values = {}
     for line in cache.read_text().splitlines():
         if '=' in line and ':' in line.split('=', 1)[0]:
             key, value = line.split('=', 1)
             values[key.split(':', 1)[0]] = value
     if values.get('CMAKE_GENERATOR') != 'Xcode':
-        raise RuntimeError('此入口只管理 macOS Xcode Debug 构建。')
+        raise RuntimeError('此入口只管理 macOS Xcode 构建。')
     if Path(values.get('CMAKE_HOME_DIRECTORY', '')).resolve() != checkout.resolve():
         raise RuntimeError('CMakeCache 指向其他 checkout，拒绝操作。')
+    if build_config not in values.get('CMAKE_CONFIGURATION_TYPES', '').split(';'):
+        raise RuntimeError('此构建目录未配置 %s：%s' % (build_config, out))
     return values['CMAKE_COMMAND']
 
 
@@ -45,10 +49,10 @@ def processes():
         (line.strip().split(None, 1) for line in result.splitlines() if line.strip())]
 
 
-def missing_inputs(project, out):
+def missing_inputs(project, out, build_config='Debug'):
     missing = set()
     for entry in project['objects'].values():
-        if entry.get('isa') != 'XCBuildConfiguration' or entry.get('name') != 'Debug':
+        if entry.get('isa') != 'XCBuildConfiguration' or entry.get('name') != build_config:
             continue
         flags = entry.get('buildSettings', {}).get('OTHER_LDFLAGS', [])
         if not isinstance(flags, list):
@@ -62,19 +66,19 @@ def missing_inputs(project, out):
     return sorted(missing)
 
 
-def validate_dependencies(out):
+def validate_dependencies(out, build_config='Debug'):
     project = json.loads(subprocess.check_output([
         '/usr/bin/plutil', '-convert', 'json', '-o', '-',
         str(out / 'Telegram.xcodeproj/project.pbxproj')], text=True))
-    missing = missing_inputs(project, out)
+    missing = missing_inputs(project, out, build_config)
     if missing:
         raise RuntimeError('缺少 %s 个外部链接输入，构建尚未启动：\n%s\n'
             '请恢复对应版本的依赖。共享 Libraries 不属于可自动清理的缓存。'
             % (len(missing), '\n'.join(str(path) for path in missing)))
 
 
-def require_idle(out, building=False):
-    executable = out / 'Debug/Telegram.app/Contents/MacOS/Telegram'
+def require_idle(out, building=False, build_config='Debug'):
+    executable = out / build_config / 'Telegram.app/Contents/MacOS/Telegram'
     for pid, name in processes():
         if Path(name).name in BUILD_TOOLS:
             raise RuntimeError('检测到编译工具运行（PID %s，%s），请等待结束后重试。'
@@ -127,14 +131,14 @@ def size(path):
     return total
 
 
-def candidates(out):
+def candidates(out, build_config='Debug'):
     intermediate = out / 'build'
     if intermediate.is_symlink():
         raise RuntimeError('拒绝清理指向其他位置的 out/build。')
     result = []
     for target in intermediate.glob('*.build'):
         if not target.is_symlink():
-            result.extend(path for path in regular_files(target / 'Debug')
+            result.extend(path for path in regular_files(target / build_config)
                 if TEMPORARY_FILE.fullmatch(path.name))
     history = intermediate / 'XCBuildData'
     if not history.is_symlink():
@@ -148,12 +152,12 @@ def candidates(out):
     return sorted(result)
 
 
-def prune(out, dry_run=False):
+def prune(out, dry_run=False, build_config='Debug'):
     if not dry_run:
         require_idle(out)
     intermediate = (out / 'build').resolve()
     reclaimed = 0
-    for path in candidates(out):
+    for path in candidates(out, build_config):
         amount = size(path)
         print('%s %s（%.1f MiB）' % (
             '将清理' if dry_run else '清理', path.relative_to(out), amount / 1024 ** 2), flush=True)
@@ -171,15 +175,15 @@ def prune(out, dry_run=False):
         '预计回收' if dry_run else '已回收', reclaimed / 1024 ** 2), flush=True)
 
 
-def report(out):
+def report(out, build_config='Debug'):
     for relative in ('build/Telegram.build', 'build/SharedPrecompiledHeaders',
-            'build/XCBuildData', 'build', 'Debug', 'zed-profile'):
+            'build/XCBuildData', 'build', build_config, 'zed-profile'):
         path = out / relative
         if path.exists():
             print('%6.2f GiB  %s' % (size(path) / GIB, path), flush=True)
     print('可用空间：%.2f GiB；上述 build 子目录包含在 build 总量中。'
         % (shutil.disk_usage(out).free / GIB), flush=True)
-    prune(out, dry_run=True)
+    prune(out, dry_run=True, build_config=build_config)
 
 
 @contextmanager
@@ -225,7 +229,7 @@ def stop_build(process, grace=10):
 def run_build(command, checkout, logger):
     environment = os.environ.copy()
     environment.pop('QT', None)
-    logger.info('开始 Debug 构建：%s', ' '.join(command))
+    logger.info('开始构建：%s', ' '.join(command))
     process = subprocess.Popen(command, cwd=checkout, env=environment,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         errors='replace', start_new_session=True)
@@ -247,9 +251,41 @@ def run_build(command, checkout, logger):
         signal.signal(signal.SIGINT, previous_interrupt)
 
 
+def package_release(out, checkout):
+    source = out / 'Release/Telegram.app'
+    executable = source / 'Contents/MacOS/Telegram'
+    architecture = subprocess.check_output(['lipo', '-archs', str(executable)], text=True).strip()
+    if architecture not in ('arm64', 'x86_64', 'x86_64 arm64', 'arm64 x86_64'):
+        raise RuntimeError('无法识别 Release 架构：' + architecture)
+    label = 'universal' if ' ' in architecture else architecture
+    archive = checkout / 'out' / ('TelegramUltra-macOS-%s-Release.zip' % label)
+    if archive.is_symlink():
+        raise RuntimeError('发布包不能是符号链接。')
+    with tempfile.TemporaryDirectory(prefix='.release-package-', dir=checkout / 'out') as temporary:
+        staging = Path(temporary)
+        app = staging / 'TelegramUltra.app'
+        subprocess.run(['ditto', str(source), str(app)], check=True)
+        subprocess.run(['strip', '-S', '-x', str(app / 'Contents/MacOS/Telegram')], check=True)
+        subprocess.run(['codesign', '--force', '--deep', '--sign', '-', '--entitlements',
+            str(checkout / 'Telegram/Telegram/Telegram.entitlements'), str(app)], check=True)
+        subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+        packaged = staging / archive.name
+        subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent',
+            str(app), str(packaged)], check=True)
+        with zipfile.ZipFile(packaged) as contents:
+            if ('TelegramUltra.app/Contents/MacOS/Telegram' not in contents.namelist()
+                    or contents.testzip() is not None):
+                raise RuntimeError('Release 压缩包校验失败。')
+        packaged.replace(archive)
+    print('Release 发布包：%s（%.1f MiB，本地 ad-hoc 签名）'
+        % (archive, archive.stat().st_size / 1024 ** 2), flush=True)
+
+
 def main():
-    parser = argparse.ArgumentParser(description='macOS Debug 增量构建与有边界的残留清理。')
-    parser.add_argument('action', nargs='?', choices=('build', 'report', 'prune'), default='build')
+    parser = argparse.ArgumentParser(description='macOS 增量构建与有边界的残留清理。')
+    parser.add_argument('action', nargs='?', choices=('build', 'package', 'report', 'prune'), default='build')
+    parser.add_argument('--config', choices=('Debug', 'Release'), default='Debug')
+    parser.add_argument('--package', action='store_true', help='Release 成功后覆盖固定名称的 ZIP 发布包')
     parser.add_argument('--dry-run', action='store_true', help='只预览 prune，不删除')
     parser.add_argument('--min-free-gib', type=float, default=8, help='构建前最低可用空间，默认 8 GiB')
     parser.add_argument('--jobs', type=int, default=min(os.cpu_count() or 2, 8))
@@ -258,22 +294,31 @@ def main():
         parser.error('jobs 必须为正整数，min-free-gib 不能为负。')
     if args.dry_run and args.action != 'prune':
         parser.error('--dry-run 仅用于 prune；report 本身只读。')
+    if args.package and (args.action != 'build' or args.config != 'Release'):
+        parser.error('--package 仅用于 Release build。')
+    if args.action == 'package' and args.config != 'Release':
+        parser.error('package 仅用于 Release。')
     if sys.platform != 'darwin':
         parser.error('此脚本只支持 macOS；其他平台继续使用原有构建入口。')
     checkout = Path(__file__).resolve().parents[2]
     out = checkout / 'out'
-    cmake = configuration(out, checkout)
+    if args.config == 'Release':
+        out = out / 'release-build'
+    cmake = configuration(out, checkout, args.config)
     if args.action == 'report':
-        report(out)
+        report(out, args.config)
         return 0
     if args.dry_run:
-        prune(out, dry_run=True)
+        prune(out, dry_run=True, build_config=args.config)
         return 0
-    with build_lock(out):
-        require_idle(out, building=args.action == 'build')
+    with build_lock(checkout / 'out'):
+        require_idle(out, building=args.action == 'build', build_config=args.config)
+        if args.action == 'package':
+            package_release(out, checkout)
+            return 0
         if args.action == 'build':
-            validate_dependencies(out)
-        prune(out)
+            validate_dependencies(out, args.config)
+        prune(out, build_config=args.config)
         if args.action == 'prune':
             return 0
         free = shutil.disk_usage(out).free / GIB
@@ -281,14 +326,17 @@ def main():
             raise RuntimeError('可用空间 %.2f GiB，低于 %.2f GiB，已停止构建。'
                 '运行 report 查看占用；不会自动删除对象文件或账号数据。'
                 % (free, args.min_free_gib))
-        command = [cmake, '--build', str(out), '--config', 'Debug',
+        command = [cmake, '--build', str(out), '--config', args.config,
             '--target', 'Telegram', '--parallel', str(args.jobs)]
-        with build_log(out / 'debug-build.log') as logger:
+        log = checkout / 'out' / (args.config.lower() + '-build.log')
+        with build_log(log) as logger:
             result = run_build(command, checkout, logger)
-            logger.info('Debug 构建退出码：%s', result)
+            logger.info('%s 构建退出码：%s', args.config, result)
         if result == 0:
-            prune(out)
-        print('构建日志：%s（最多两份，每份 32 MiB）' % (out / 'debug-build.log'), flush=True)
+            prune(out, build_config=args.config)
+            if args.package:
+                package_release(out, checkout)
+        print('构建日志：%s（最多两份，每份 32 MiB）' % log, flush=True)
         return result
 
 

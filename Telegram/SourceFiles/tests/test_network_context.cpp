@@ -136,9 +136,38 @@ void TestHttpRouting() {
 	QNetworkProxy::setApplicationProxy(QNetworkProxy::DefaultProxy);
 }
 
+void TestDirectRouting() {
+	auto account = MTP::NetworkContext();
+	account.useDirect(false);
+	const auto direct = account.snapshot();
+	Require(direct.allowed() && direct.bindingId.isEmpty(),
+		"Explicit direct mode connects without binding a proxy.");
+	Require(direct.httpProxy()
+		&& direct.httpProxy()->type() == QNetworkProxy::NoProxy,
+		"Direct HTTP must not inherit the global proxy.");
+	account.block();
+	Require(!direct.allowed() && !account.snapshot().allowed(),
+		"Stopping direct mode revokes both old and new requests.");
+	account.useDirect(true);
+	Require(account.snapshot().allowed() && account.snapshot().tryIPv6,
+		"Direct mode can resume after an explicit stop.");
+	const auto resumed = account.snapshot();
+	const auto pending = account.bind(u"missing"_q, {}, false);
+	Require(!resumed.allowed() && !account.snapshot().allowed(),
+		"Binding a proxy revokes the direct route before validation.");
+	Require(account.completeValidation(pending, false)
+		&& !account.snapshot().allowed(),
+		"Proxy failure never falls back to direct mode.");
+	account.useDirect(false);
+	Require(!account.completeValidation(pending, true)
+		&& account.snapshot().allowed(),
+		"A late proxy result cannot overwrite the selected direct route.");
+}
+
 int main(int argc, char **argv) {
 	const auto app = QCoreApplication(argc, argv);
 	TestHttpRouting();
+	TestDirectRouting();
 	auto library = Core::ProxyLibrary();
 	auto savedProxy = MTP::ProxyData();
 	savedProxy.type = MTP::ProxyData::Type::Socks5;

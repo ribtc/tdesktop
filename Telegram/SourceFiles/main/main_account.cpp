@@ -120,6 +120,7 @@ bool Account::bindProxy(const QString &id) {
 	}
 	++_proxyBindingOperation;
 	_proxyRetryDelay = 5000;
+	_local->writePref<bool>("account-network-blocked", false);
 	_local->writePref<QString>("account-proxy-binding", id);
 	_local->writePref<bool>("account-pending-login", !sessionExists());
 	_domain->scheduleWriteAccounts();
@@ -132,8 +133,18 @@ void Account::unbindProxy() {
 	_proxyRetryDelay = 5000;
 	cancelProxyCheck();
 	_local->writePref<QString>("account-proxy-binding", QString());
+	_local->writePref<bool>("account-network-blocked", true);
 	const auto unbound = _network->bind({}, {}, false);
 	Assert(!unbound.allowed());
+}
+
+void Account::useDirectConnection() {
+	++_proxyBindingOperation;
+	_local->writePref<QString>("account-proxy-binding", QString());
+	_local->writePref<bool>("account-network-blocked", false);
+	_local->writePref<bool>("account-pending-login", !sessionExists());
+	_domain->scheduleWriteAccounts();
+	retryProxy();
 }
 
 void Account::cancelPendingLogin() {
@@ -171,6 +182,10 @@ void Account::retryProxy() {
 
 void Account::startProxyCheck() {
 	const auto id = proxyBindingId();
+	if (id.isEmpty() && !_local->readPref<bool>("account-network-blocked")) {
+		_network->useDirect(Core::App().settings().proxy().tryIPv6());
+		return;
+	}
 	const auto entry = Core::App().settings().proxyLibrary().find(id);
 	const auto checking = _network->bind(
 		id,

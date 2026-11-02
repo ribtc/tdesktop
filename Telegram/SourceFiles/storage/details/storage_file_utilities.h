@@ -110,10 +110,13 @@ private:
 
 };
 
+[[nodiscard]] bool FileExists(const QString &name, const QString &basePath);
+
 bool ReadFile(
 	FileReadDescriptor &result,
 	const QString &name,
-	const QString &basePath);
+	const QString &basePath,
+	bool keepVariants = false);
 
 bool DecryptLocal(
 	EncryptedDescriptor &result,

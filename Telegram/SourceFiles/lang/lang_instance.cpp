@@ -303,10 +303,26 @@ std::map<QString, BundledPack> LoadBundledValues() {
 	return result;
 }
 
-const BundledPack &BundledValues(const QString &id) {
+const BundledPack &BundledValues(
+		const QString &id,
+		const QString &pluralId,
+		const QString &nativeName) {
 	static const auto packs = LoadBundledValues();
 	static const auto empty = BundledPack();
-	const auto i = packs.find(id);
+	const auto exact = packs.find(id);
+	if (exact != packs.end()) {
+		return exact->second;
+	}
+	const auto locale = QLocale(id);
+	const auto pluralLocale = QLocale(pluralId);
+	if (locale.language() != QLocale::Chinese
+		&& pluralLocale.language() != QLocale::Chinese) {
+		return empty;
+	}
+	const auto traditional = (locale.script() == QLocale::TraditionalHanScript)
+		|| (pluralLocale.script() == QLocale::TraditionalHanScript)
+		|| nativeName.contains(u'繁');
+	const auto i = packs.find(traditional ? u"zh-hant"_q : u"zh-hans"_q);
 	return (i != packs.end()) ? i->second : empty;
 }
 
@@ -355,7 +371,8 @@ void Instance::applySystemLanguage() {
 }
 
 void Instance::applyBundledValues() {
-	for (const auto &[key, value] : BundledValues(_id)) {
+	const auto &bundled = BundledValues(_id, _pluralId, _nativeName);
+	for (const auto &[key, value] : bundled) {
 		applyValue(key, value);
 		_nonDefaultValues.erase(key);
 	}
@@ -831,10 +848,11 @@ std::map<ushort, QString> Instance::ParseStrings(
 
 QString Instance::getNonDefaultValue(const QByteArray &key) const {
 	const auto i = _nonDefaultValues.find(key);
+	const auto &bundled = BundledValues(_id, _pluralId, _nativeName);
 	return (i != end(_nonDefaultValues))
 		? QString::fromUtf8(i->second)
-		: BundledValues(_id).contains(key)
-		? QString::fromUtf8(BundledValues(_id).at(key))
+		: bundled.contains(key)
+		? QString::fromUtf8(bundled.at(key))
 		: _base
 		? _base->getNonDefaultValue(key)
 		: QString();
@@ -872,7 +890,7 @@ void Instance::updatePluralRules() {
 }
 
 void Instance::resetValue(const QByteArray &key) {
-	const auto &bundled = BundledValues(_id);
+	const auto &bundled = BundledValues(_id, _pluralId, _nativeName);
 	const auto i = bundled.find(key);
 	if (i != bundled.end()) {
 		applyValue(key, i->second);
@@ -911,7 +929,11 @@ QString EarlyValue(ushort key) {
 	}
 	const auto language = SystemLanguage(SystemUiLanguageCode());
 	auto result = GetOriginalValue(key);
-	for (const auto &[name, value] : BundledValues(language.id)) {
+	const auto &bundled = BundledValues(
+		language.id,
+		language.pluralId,
+		language.nativeName);
+	for (const auto &[name, value] : bundled) {
 		if (GetKeyIndex(QLatin1String(name)) == key) {
 			ParseKeyValue(name, value, [&](ushort, QString &&parsed) {
 				result = std::move(parsed);

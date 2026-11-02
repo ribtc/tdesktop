@@ -58,6 +58,25 @@ ad-hoc 签名和校验后发布 GitHub Release。安装包未经过 Apple 公证
 `build-info.json`。同一标签重跑时覆盖同名资产，构建失败不发布新包；工作流
 复用依赖缓存，不额外执行 Debug 构建。
 
+### Windows Release
+
+`.github/workflows/release-windows.yml` 构建 Windows x64 Release。它支持手动运行、
+复用工作流调用，以及新推送的 `v*-telegram-ultra.*` 发布标签。普通分支推送
+不会触发该工作流。手动入口在工作流进入仓库默认分支后可用。
+
+`release_tag` 选择源码标签；`publish` 默认关闭，只上传保留一天的构建产物。
+设置 `publish=true` 时，把校验通过的文件附加到该标签已有的 GitHub Release，
+覆盖同名资产，并保留已有发布说明及 macOS 资产。
+
+依赖沿用 Windows 准备脚本，ThirdParty、Qt 和其他库分别缓存。依赖准备成功后
+立即保存缓存，后续应用编译失败也能复用。应用仅构建 Release，使用同一组正式
+API Secrets，关闭自动更新与崩溃上报。
+
+产物为 `TelegramUltra-Windows-x64-Release.zip`、`SHA256SUMS-Windows-x64.txt` 和
+`build-info-Windows-x64.json`。ZIP 包含程序、ANGLE 所需 DLL 和固定的便携数据
+目录标记，不包含账号数据、PDB 或编译中间文件。包未做 Authenticode 签名；
+发布前检查 PE 架构、ZIP 完整性与 SHA-256。
+
 ## 空间管理
 
 查看占用与清理预览：

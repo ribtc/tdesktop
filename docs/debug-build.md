@@ -36,46 +36,37 @@ Debug 与 Release 的对象不能混用，各保留一套固定增量目录；�
 
 ## GitHub Release
 
-要求 GitHub 构建发版时，使用 `.github/workflows/release-macos.yml`，本地无需编译。
-推送源码后，在该提交上创建并推送 `v*-telegram-ultra.*` 格式的发布标签，
-例如 `v7.3.4-telegram-ultra.1`。
+远端正式版统一使用 `.github/workflows/ci.yml`，本地无需重复编译。
+推送 `v*-telegram-ultra.*` 格式的发布标签，例如 `v7.3.4-telegram-ultra.3`，
+会启动一条 Release CI：macOS arm64 和 Windows x64 两个 job 并行构建，
+两端均成功后由发布 job 校验 SHA-256、源码提交及标签，再上传到同一个 GitHub Release。
+任一构建失败时不发布新包；重跑成功后覆盖同名资产。
 
-fork 首次使用时，先在仓库 Actions 页面重新启用工作流。已有发布标签需要手动
-触发时，使用包含最新工作流的源码分支：
+普通分支提交和 PR 不触发 Release CI。手动运行只保留构建产物，不发布 Release：
 
 ```sh
-gh workflow run mac_packaged.yml --ref codex/account-network-isolation \
-  -f release_tag=v7.3.4-telegram-ultra.1
+gh workflow run ci.yml --ref codex/account-network-isolation
 ```
 
-该入口只执行 Release，检出的源码以 `release_tag` 为准。
+手动入口需先让 `ci.yml` 进入仓库默认分支。`--ref` 选择包含该工作流的分支或
+标签，两端始终检出同一事件提交。构建产物保留一天，可从 Actions 页面下载。
+修改配置且本次不需要构建时，在提交消息中加入 `[skip ci]` 后仅推送分支，
+不推送发布标签，也不手动运行工作流。
 
 仓库 Actions Secrets 需配置 `TDESKTOP_API_ID` 和 `TDESKTOP_API_HASH`。
-工作流关闭测试 API，使用 Homebrew 依赖构建 macOS arm64 Release，完成依赖打包、
-ad-hoc 签名和校验后发布 GitHub Release。安装包未经过 Apple 公证。
+两端均使用正式 API 凭据，关闭自动更新与崩溃上报，只构建 Release。
+macOS 使用 Homebrew 依赖；Windows 沿用准备脚本，并分别缓存 ThirdParty、Qt
+和其他库。Windows 依赖准备成功即保存缓存，后续应用编译失败也能复用。
 
-发布资产固定为 `TelegramUltra-macOS-arm64-Release.zip`、`SHA256SUMS.txt` 和
-`build-info.json`。同一标签重跑时覆盖同名资产，构建失败不发布新包；工作流
-复用依赖缓存，不额外执行 Debug 构建。
+发布资产为：
 
-### Windows Release
+- macOS：`TelegramUltra-macOS-arm64-Release.zip`、`SHA256SUMS.txt`、`build-info.json`。
+- Windows：`TelegramUltra-Windows-x64-Release.zip`、`SHA256SUMS-Windows-x64.txt`、
+  `build-info-Windows-x64.json`。
 
-`.github/workflows/release-windows.yml` 构建 Windows x64 Release。它支持手动运行、
-复用工作流调用，以及新推送的 `v*-telegram-ultra.*` 发布标签。普通分支推送
-不会触发该工作流。手动入口在工作流进入仓库默认分支后可用。
-
-`release_tag` 选择源码标签；`publish` 默认关闭，只上传保留一天的构建产物。
-设置 `publish=true` 时，把校验通过的文件附加到该标签已有的 GitHub Release，
-覆盖同名资产，并保留已有发布说明及 macOS 资产。
-
-依赖沿用 Windows 准备脚本，ThirdParty、Qt 和其他库分别缓存。依赖准备成功后
-立即保存缓存，后续应用编译失败也能复用。应用仅构建 Release，使用同一组正式
-API Secrets，关闭自动更新与崩溃上报。
-
-产物为 `TelegramUltra-Windows-x64-Release.zip`、`SHA256SUMS-Windows-x64.txt` 和
-`build-info-Windows-x64.json`。ZIP 包含程序、ANGLE 所需 DLL 和固定的便携数据
-目录标记，不包含账号数据、PDB 或编译中间文件。包未做 Authenticode 签名；
-发布前检查 PE 架构、ZIP 完整性与 SHA-256。
+macOS 包验证架构、依赖打包、ad-hoc 签名和 ZIP 完整性，未经过 Apple 公证。
+Windows 包验证 PE 架构、ZIP 完整性与 SHA-256，包含程序、ANGLE DLL 和空的便携
+目录标记，不包含账号数据、PDB 或编译中间文件，未做 Authenticode 签名。
 
 ## 空间管理
 

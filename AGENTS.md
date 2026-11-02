@@ -347,7 +347,7 @@ user to close that checkout's Telegram/debugger before rebuilding.
 
 ## Remote CI Build Validation (private-ci)
 
-macOS Release 发布使用 `.github/workflows/release-macos.yml`；触发方式和凭据
+macOS / Windows Release 统一使用 `.github/workflows/ci.yml`；触发方式和凭据
 配置见 `docs/debug-build.md` 的 GitHub Release 部分。仅在用户要求远端发版时
 推送发布标签，普通推送不触发该发布工作流。
 

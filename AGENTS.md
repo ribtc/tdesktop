@@ -131,6 +131,28 @@ The scheduled dependency monitor remains advisory and does not implement fixes.
 
 ## Build Configuration
 
+### 构建频率与产物保留
+
+目标是减少无效重复构建和历史文件堆积。按需增量构建，不设构建次数上限。
+
+- 按用户指定的平台执行构建。要求 GitHub 构建时，推送源码并触发对应工作流，
+  由远端完成构建和发版；本地继续完成静态检查，不再编译同一份产物。
+- 日常验证默认用 Debug；用户要求正式版、发布包或 Release 时直接构建 Release。
+- 集中完成一批修改后再构建所需配置。已有成功且对应当前源码、依赖和配置的
+  产物时直接复用；纯文档修改无需构建。源码、依赖或配置变化、失败修复及
+  用户明确要求重新构建时，可以继续在原目录增量构建。
+- 正式版构建成功后直接验证和交付该产物，无需再构建 Debug。只需重新打包且
+  构建输入未变时，复用 Release 应用，使用下方文档中的独立打包命令。
+- 复用已有构建目录和增量对象。此 checkout 的 macOS Debug 使用 `out/`，
+  Release 使用 `out/release-build/`。各配置保留一套固定目录，不按日期、功能
+  或重试次数另建目录。保留对象和预编译头，供后续增量构建复用。
+- 应用更新固定路径；同架构发布包使用固定文件名，新包校验成功后覆盖旧包。
+  打包临时副本用完删除；日志和构建描述按下方入口轮转。默认不保留带日期或
+  修复名后缀的应用、ZIP、日志及备份，用户明确要求留档时除外。
+- 清理通过下方入口执行，范围和保留数量见 `docs/debug-build.md`。保留账号数据
+  和依赖输入，包括 `Libraries` 及 `out/` 内仍被引用的 Qt 安装目录。旧手工副本
+  先确认来源和数据边界，再单独清理。
+
 ### Build Commands
 
 **On macOS, from repository root, run:**
@@ -139,11 +161,16 @@ The scheduled dependency monitor remains advisory and does not implement fixes.
 python3 Telegram/build/debug_build.py
 ```
 
-This reuses `out/`, bounds build logs and Xcode description history, and removes
-recognized abandoned compiler/linker temporary files. For space reports,
-cleanup previews and IDE setup, read `docs/debug-build.md`. It preserves objects,
-precompiled headers, `out/Debug` and account folders; never replace it with an
-Xcode clean. The full-recompile recovery procedure below remains separate.
+用户要求正式版时，运行以下命令，复用已配置的 `out/release-build/`：
+
+```bash
+python3 Telegram/build/debug_build.py --config Release --package
+```
+
+Release 应用位于 `out/release-build/Release/Telegram.app`，发布包位于
+`out/TelegramUltra-macOS-<arch>-Release.zip`。只编译时省略 `--package`。
+For space reports, cleanup previews, packaging details and IDE setup, read
+`docs/debug-build.md`. The full-recompile recovery procedure below remains separate.
 
 **On native Windows or Linux, from repository root, run:**
 
@@ -151,7 +178,9 @@ Xcode clean. The full-recompile recovery procedure below remains separate.
 cmake --build out --config Debug --target Telegram
 ```
 
-That's it. The `out/` directory is already configured. The executable will be at `out/Debug/Telegram.exe`.
+The `out/` directory is already configured. On Windows the Debug executable is
+`out/Debug/Telegram.exe`. For an explicitly requested Release, use the existing
+Release-configured tree and select `--config Release` for multi-config generators.
 
 **From WSL, run through the Linux Docker build environment:**
 
@@ -163,8 +192,6 @@ Telegram/build/docker/centos_env/build_debug.sh
 ```bash
 cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 ```
-
-**Never build Release** - it's extremely heavy and not needed for testing changes.
 
 **On macOS, never run an Xcode clean against `out/`** - not `--target clean`,
 not `--clean-first` with any target, not `xcodebuild ... clean` and not a
@@ -318,12 +345,11 @@ because the user is testing it. Do not terminate it or delete locked build
 outputs without explicit permission. Report the exact locked path and ask the
 user to close that checkout's Telegram/debugger before rebuilding.
 
-## Best Practices
-
-1. **Always use Debug builds** - Release builds are extremely heavy
-2. **Don't build Release configuration** - it's too heavy for testing
-
 ## Remote CI Build Validation (private-ci)
+
+macOS Release 发布使用 `.github/workflows/release-macos.yml`；触发方式和凭据
+配置见 `docs/debug-build.md` 的 GitHub Release 部分。仅在用户要求远端发版时
+推送发布标签，普通推送不触发该发布工作流。
 
 Fast Debug build checks on Depot.dev (`.github/workflows/private-ci.yml`) run on
 `private-ci/<slug>` branches. Strictly on-demand: never push or babysit CI unless

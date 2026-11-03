@@ -421,6 +421,14 @@ jobs:
             throw "The selected toolset did not add $atlInclude to INCLUDE."
           }
 
+      - name: Check Qt dependency configuration.
+        shell: pwsh
+        run: |
+          python "$env:TBUILD/$env:REPO_NAME/Telegram/build/test_qt_dependency_paths.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python "$env:TBUILD/$env:REPO_NAME/Telegram/build/test_prepare_qt.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: NuGet sources.
         run: |
           nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"

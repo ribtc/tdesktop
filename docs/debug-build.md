@@ -61,6 +61,7 @@ gh workflow run ci.yml --ref codex/account-network-isolation -f platform=windows
 两端均使用正式 API 凭据，关闭自动更新与崩溃上报，只构建 Release。
 macOS 使用 Homebrew 依赖；Windows 沿用准备脚本，并分别缓存 ThirdParty、Qt
 和其他库。Windows 的 Qt 使用 `qt-release-only`，省去 Debug Qt 和调试符号；
+Windows 主程序 Release 关闭嵌入式调试符号，避免大量对象文件耗尽 runner 磁盘；
 本地默认准备方式不变。macOS 每项依赖成功后立即保存缓存，Windows 在依赖准备
 成功后保存缓存，后续应用编译失败仍可复用。
 

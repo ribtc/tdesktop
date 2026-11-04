@@ -57,6 +57,10 @@ include(cmake/target_prepare_qrc.cmake)
 include(cmake/options.cmake)
 
 include(cmake/external/qt/package.cmake)
+if (APPLE AND NOT DESKTOP_APP_USE_PACKAGED)
+    get_filename_component(qt_loc
+        "${Qt${QT_VERSION_MAJOR}_DIR}/../../.." REALPATH)
+endif()
 
 set(desktop_app_skip_libs
     glibmm

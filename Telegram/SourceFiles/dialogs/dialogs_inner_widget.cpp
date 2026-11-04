@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
 
+#include "main/main_protection.h"
+
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
 #include "dialogs/ui/chat_search_in.h"
@@ -4125,6 +4127,17 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 			fillSearchResultMenu(_menu.get(), row.fullId);
 		}
 	} else {
+		if (session().protection().settings().unreadPreview
+			&& row.key.entry()->asThread()
+			&& !(row.key.peer()->asChannel()
+				&& row.key.peer()->asChannel()->isCommunity())) {
+			const auto weakThread = base::make_weak(row.key.entry()->asThread());
+			_menu->addAction(tr::lng_protection_preview_action(tr::now), [=] {
+				if (weakThread.get()) {
+					_controller->showChatPreview(row, nullptr, nullptr, {}, true);
+				}
+			});
+		}
 		const auto addAction = Ui::Menu::CreateAddActionCallback(_menu);
 		Window::FillDialogsEntryMenu(
 			_controller,

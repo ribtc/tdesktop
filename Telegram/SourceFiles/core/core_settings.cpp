@@ -1863,6 +1863,30 @@ void Settings::setLegacyEmojiVariants(QMap<QString, int> data) {
 	}
 }
 
+ProxyLibrary &Settings::proxyLibrary() {
+	if (!_proxyLibrary) {
+		_proxyLibrary = std::make_unique<ProxyLibrary>();
+		const auto stored = readPrefGeneric(kProxyLibraryPref);
+		if (stored) {
+			if (!_proxyLibrary->load(*stored)) {
+				LOG(("Could not read account proxy library; preserving data."));
+			}
+		} else {
+			_proxyLibrary->importLegacy(
+				_proxy.list(),
+				_proxy.selected(),
+				_proxy.tryIPv6());
+			writePref<QByteArray>(kProxyLibraryPref, _proxyLibrary->serialize());
+		}
+		_proxyLibrary->changes() | rpl::on_next([=](ProxyLibraryChange change) {
+			if (!change.before) {
+				writePref<QByteArray>(kProxyLibraryPref, _proxyLibrary->serialize());
+			}
+		}, _proxyLibraryLifetime);
+	}
+	return *_proxyLibrary;
+}
+
 void Settings::resetOnLastLogout() {
 	_adaptiveForWide = true;
 	_moderateModeEnabled = false;
@@ -1943,7 +1967,11 @@ void Settings::resetOnLastLogout() {
 	_storiesClickTooltipHidden = false;
 	_ttlVoiceClickTooltipHidden = false;
 	const auto srDisabled = readPref<bool>(kScreenReaderModeDisabledKey);
+	const auto proxies = readPrefGeneric(kProxyLibraryPref);
 	_prefs.clear();
+	if (proxies) {
+		writePref<QByteArray>(kProxyLibraryPref, *proxies);
+	}
 	if (srDisabled) {
 		writePref<bool>(kScreenReaderModeDisabledKey, true);
 	}

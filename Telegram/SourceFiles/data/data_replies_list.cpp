@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_replies_list.h"
 
+#include "data/components/retained_messages.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_helpers.h"
@@ -223,7 +224,9 @@ rpl::producer<MessagesSlice> RepliesList::source(
 }
 
 void RepliesList::appendClientSideMessages(MessagesSlice &slice) {
-	const auto &messages = _history->clientSideMessages();
+	auto messages = _history->session().retainedMessages().items(_history);
+	const auto &local = _history->clientSideMessages();
+	messages.insert(messages.end(), local.begin(), local.end());
 	if (messages.empty()) {
 		return;
 	} else if (slice.ids.empty()) {
@@ -253,7 +256,14 @@ void RepliesList::appendClientSideMessages(MessagesSlice &slice) {
 		if (!item->inThread(_rootId)) {
 			continue;
 		}
+		if (ranges::contains(slice.ids, item->fullId())) {
+			continue;
+		}
 		const auto date = item->date();
+		if (date > dates.back() && slice.skippedAfter != 0
+			&& _history->session().retainedMessages().isRetained(item->fullId())) {
+			continue;
+		}
 		if (date < dates.front()) {
 			if (slice.skippedBefore != 0) {
 				if (slice.skippedBefore) {
@@ -270,7 +280,7 @@ void RepliesList::appendClientSideMessages(MessagesSlice &slice) {
 				if (dates[to - 1] > date) {
 					continue;
 				} else if (dates[to - 1] < date
-					|| IsServerMsgId(checkId)
+					|| (IsServerMsgId(checkId) && !IsServerMsgId(item->id))
 					|| checkId < item->id) {
 					break;
 				}

@@ -25,7 +25,9 @@ struct PaymentConfiguration {
 
 class APIClient final {
 public:
-	explicit APIClient(PaymentConfiguration configuration);
+	APIClient(
+		PaymentConfiguration configuration,
+		std::unique_ptr<QNetworkAccessManager> manager);
 	~APIClient();
 
 	void createTokenWithCard(
@@ -41,7 +43,7 @@ private:
 	QString _apiUrl;
 	PaymentConfiguration _configuration;
 	std::map<QString, QString> _additionalHttpHeaders;
-	QNetworkAccessManager _manager;
+	std::unique_ptr<QNetworkAccessManager> _manager;
 	std::unique_ptr<QNetworkReply> _reply;
 	std::vector<std::unique_ptr<QNetworkReply>> _old;
 

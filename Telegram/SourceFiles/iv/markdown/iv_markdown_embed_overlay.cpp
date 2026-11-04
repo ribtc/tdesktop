@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "iv/markdown/iv_markdown_embed_overlay.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "base/algorithm.h"
 #include "core/file_utilities.h"
 #include "ui/chat/attach/attach_bot_webview.h"
@@ -292,6 +294,11 @@ bool EmbedOverlay::startEmbed(
 		_loadingAnimation.start();
 	}
 	_content->update();
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		showWebviewError({ error });
+		return true;
+	}
 	const auto available = Webview::Availability();
 	if (!_webview) {
 		if (available.error != Webview::Available::Error::None) {
@@ -522,6 +529,11 @@ QSize EmbedOverlay::externalInitialSize() const {
 }
 
 void EmbedOverlay::ensureWebview() {
+	const auto error = Core::AccountWebViewError();
+	if (!error.isEmpty()) {
+		showWebviewError({ error });
+		return;
+	}
 	if (_webview && _webview->widget()) {
 		updateContentGeometry();
 		return;

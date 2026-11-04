@@ -1,9 +1,10 @@
 #define MyAppShortName "Telegram"
-#define MyAppName "Telegram Desktop"
+#define MyAppName "TelegramUltra"
+#define MyAppDisplayName "TelegramUltra"
 #define MyAppPublisher "Telegram FZ-LLC"
 #define MyAppURL "https://desktop.telegram.org"
 #define MyAppExeName "Telegram.exe"
-#define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
+#define MyAppId "361D3A6D-A353-4F55-A626-B0D3A72DDD1C"
 #define CurrentYear GetDateTimeString('yyyy','','')
 
 [Setup]
@@ -11,7 +12,7 @@
 ; Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{{#MyAppId}}
-AppName={#MyAppName}
+AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
 AppCopyright={#MyAppPublisher} 2014-{#CurrentYear}
 AppPublisher={#MyAppPublisher}
@@ -19,11 +20,11 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={userappdata}\{#MyAppName}
-DefaultGroupName={#MyAppName}
+DefaultGroupName={#MyAppDisplayName}
 AllowNoIcons=yes
 OutputDir={#ReleasePath}
 SetupIconFile={#SourcePath}..\Resources\art\icon256.ico
-UninstallDisplayName={#MyAppName}
+UninstallDisplayName={#MyAppDisplayName}
 UninstallDisplayIcon={app}\Telegram.exe
 Compression=lzma
 SolidCompression=yes
@@ -50,15 +51,15 @@ OutputBaseFilename={#MyOutputBaseFilename}
 #if MyBuildTarget == "winarm"
   ArchitecturesAllowed="arm64"
   #define ArchModulesFolder "arm64"
-  AppVerName={#MyAppName} {#MyAppVersion} arm64
+  AppVerName={#MyAppDisplayName} {#MyAppVersion} arm64
 #elif MyBuildTarget == "win64"
   ArchitecturesAllowed="x64compatible"
   ArchitecturesInstallIn64BitMode="x64compatible"
   #define ArchModulesFolder "x64"
-  AppVerName={#MyAppName} {#MyAppVersion} 64bit
+  AppVerName={#MyAppDisplayName} {#MyAppVersion} 64bit
 #else
   #define ArchModulesFolder "x86"
-  AppVerName={#MyAppName} {#MyAppVersion} 32bit
+  AppVerName={#MyAppDisplayName} {#MyAppVersion} 32bit
 #endif
 
 #define ModulesFolder "modules\" + ArchModulesFolder
@@ -86,12 +87,12 @@ Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{group}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{cm:UninstallProgram,{#MyAppShortName}}"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppDisplayName}}"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppShortName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppDisplayName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\data"

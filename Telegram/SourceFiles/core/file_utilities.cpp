@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/file_utilities.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "base/platform/base_platform_file_utilities.h"
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -180,6 +182,10 @@ void OpenUrl(const QString &url) {
 }
 
 void OpenUrlWithOwnAutoLogin(const QString &url) {
+	if (UrlWithoutWebAuthTokens(url) != url) {
+		Ui::Toast::Show(Core::AccountWebViewError());
+		return;
+	}
 	crl::on_main([=] {
 		Ui::PreventDelayedActivation();
 		Platform::File::UnsafeOpenUrl(url);

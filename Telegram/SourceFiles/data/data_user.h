@@ -222,7 +222,7 @@ public:
 	[[nodiscard]] bool messageMoneyRestrictionsKnown() const;
 	[[nodiscard]] bool canSendIgnoreMoneyRestrictions() const;
 	[[nodiscard]] bool readDatesPrivate() const;
-	[[nodiscard]] bool allowsForwarding() const;
+	[[nodiscard]] bool hasProtectedContent() const;
 	void setNoForwardsFlags(bool myEnabled, bool peerEnabled);
 	[[nodiscard]] bool isForum() const {
 		return flags() & Flag::Forum;

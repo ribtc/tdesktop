@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/random.h"
 
 #include <QtCore/QCryptographicHash>
+#include <QtCore/QThread>
+#include <QtNetwork/QSslSocket>
 
 namespace Core {
 namespace {
@@ -26,30 +28,162 @@ constexpr auto kMaxUpgradeResponse = 8 * 1024;
 constexpr auto kAcceptGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 constexpr auto kSecureDefaultPort = 443;
 
+class SocketThread final {
+public:
+	SocketThread();
+	~SocketThread();
+
+	[[nodiscard]] static std::shared_ptr<SocketThread> Acquire();
+	[[nodiscard]] QObject *dispatcher();
+
+private:
+	QThread _thread;
+	QObject *_dispatcher = nullptr;
+
+};
+
+SocketThread::SocketThread() : _dispatcher(new QObject()) {
+	_dispatcher->moveToThread(&_thread);
+	QObject::connect(
+		&_thread,
+		&QThread::finished,
+		_dispatcher,
+		&QObject::deleteLater);
+	_thread.setObjectName(u"WebSocket"_q);
+	_thread.start();
+}
+
+SocketThread::~SocketThread() {
+	_thread.quit();
+	_thread.wait();
+}
+
+std::shared_ptr<SocketThread> SocketThread::Acquire() {
+	static auto mutex = std::mutex();
+	static auto shared = std::weak_ptr<SocketThread>();
+	const auto lock = std::lock_guard(mutex);
+	auto result = shared.lock();
+	if (!result) {
+		result = std::make_shared<SocketThread>();
+		shared = result;
+	}
+	return result;
+}
+
+QObject *SocketThread::dispatcher() {
+	return _dispatcher;
+}
+
 } // namespace
 
-WebSocketClient::WebSocketClient(QObject *parent) : QObject(parent) {
-	connect(&_socket, &QSslSocket::encrypted, this, [=] {
+class WebSocketClient::Worker final : public QObject {
+public:
+	Worker(WebSocketClient *owner, MTP::NetworkSnapshot route);
+
+	void connectTo(
+		const QString &host,
+		int port,
+		const QString &requestTarget,
+		const QString &subprotocol);
+	void sendText(const QByteArray &message);
+	void sendBinary(const QByteArray &message);
+	void close();
+
+private:
+	void notify(Event event, QByteArray payload = {});
+	void onSslConnected();
+	void onReadyRead();
+	void sendUpgradeRequest();
+	[[nodiscard]] bool readUpgradeResponse();
+	[[nodiscard]] bool parseFrames();
+	void writeFrame(const QByteArray &payload, quint8 opcode);
+	void fail();
+
+	enum class State {
+		Idle,
+		Connecting,
+		WaitingUpgrade,
+		Connected,
+		Closed,
+	};
+
+	WebSocketClient *const _owner = nullptr;
+	const MTP::NetworkSnapshot _route;
+	QSslSocket _socket;
+	QString _host;
+	QString _target;
+	QString _subprotocol;
+	QByteArray _key;
+	QByteArray _incoming;
+	State _state = State::Idle;
+	int _port = 0;
+
+};
+
+struct WebSocketClient::Private {
+	Private(WebSocketClient *owner, MTP::NetworkSnapshot route);
+	~Private();
+
+	std::shared_ptr<SocketThread> thread = SocketThread::Acquire();
+	Worker *worker = nullptr;
+};
+
+WebSocketClient::Worker::Worker(
+		WebSocketClient *owner,
+		MTP::NetworkSnapshot route)
+: _owner(owner)
+, _route(std::move(route)) {
+	connect(&_socket, &QSslSocket::encrypted, this, [this] {
 		onSslConnected();
 	});
-	connect(&_socket, &QSslSocket::readyRead, this, [=] {
+	connect(&_socket, &QSslSocket::readyRead, this, [this] {
 		onReadyRead();
 	});
-	connect(&_socket, &QSslSocket::disconnected, this, [=] {
+	connect(&_socket, &QSslSocket::disconnected, this, [this] {
 		fail();
 	});
 	connect(
 		&_socket,
 		&QAbstractSocket::errorOccurred,
 		this,
-		[=](QAbstractSocket::SocketError) { fail(); });
+		[this](QAbstractSocket::SocketError) { fail(); });
 }
 
-WebSocketClient::~WebSocketClient() {
-	_socket.abort();
+WebSocketClient::Private::Private(
+		WebSocketClient *owner,
+		MTP::NetworkSnapshot route) {
+	QMetaObject::invokeMethod(
+		thread->dispatcher(),
+		[&] {
+			worker = new Worker(owner, std::move(route));
+		},
+		Qt::BlockingQueuedConnection);
 }
 
-void WebSocketClient::connectTo(
+WebSocketClient::Private::~Private() {
+	QMetaObject::invokeMethod(
+		thread->dispatcher(),
+		[&] {
+			worker->close();
+			delete worker;
+		},
+		Qt::BlockingQueuedConnection);
+}
+
+void WebSocketClient::Worker::notify(Event event, QByteArray payload) {
+	QMetaObject::invokeMethod(
+		_owner,
+		[
+			owner = _owner,
+			event,
+			payload = std::move(payload)
+		] {
+			owner->dispatch(event, payload);
+		},
+		Qt::QueuedConnection);
+}
+
+void WebSocketClient::Worker::connectTo(
 		const QString &host,
 		int port,
 		const QString &requestTarget,
@@ -57,15 +191,25 @@ void WebSocketClient::connectTo(
 	if (_state != State::Idle) {
 		return;
 	}
+	const auto proxy = _route.httpProxy();
+	if (!proxy) {
+		fail();
+		return;
+	}
 	_host = host;
 	_port = port;
 	_target = requestTarget;
 	_subprotocol = subprotocol;
 	_state = State::Connecting;
+	_socket.setProxy(*proxy);
 	_socket.connectToHostEncrypted(host, quint16(port));
 }
 
-void WebSocketClient::onSslConnected() {
+void WebSocketClient::Worker::onSslConnected() {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	if (_state != State::Connecting) {
 		return;
 	}
@@ -73,7 +217,7 @@ void WebSocketClient::onSslConnected() {
 	sendUpgradeRequest();
 }
 
-void WebSocketClient::sendUpgradeRequest() {
+void WebSocketClient::Worker::sendUpgradeRequest() {
 	auto keyBytes = std::array<uint8_t, 16>();
 	base::RandomFill(keyBytes.data(), keyBytes.size());
 	_key = QByteArray(
@@ -96,7 +240,7 @@ void WebSocketClient::sendUpgradeRequest() {
 	_socket.write(request.toLatin1());
 }
 
-bool WebSocketClient::readUpgradeResponse() {
+bool WebSocketClient::Worker::readUpgradeResponse() {
 	const auto end = _incoming.indexOf("\r\n\r\n");
 	if (end < 0) {
 		return (_incoming.size() < kMaxUpgradeResponse);
@@ -130,13 +274,15 @@ bool WebSocketClient::readUpgradeResponse() {
 	}
 	_incoming.remove(0, end + 4);
 	_state = State::Connected;
-	if (const auto handler = onConnected) {
-		handler();
-	}
+	notify(Event::Connected);
 	return true;
 }
 
-void WebSocketClient::onReadyRead() {
+void WebSocketClient::Worker::onReadyRead() {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	if (_state == State::WaitingUpgrade) {
 		_incoming.append(_socket.readAll());
 		if (!readUpgradeResponse()) {
@@ -155,12 +301,11 @@ void WebSocketClient::onReadyRead() {
 	}
 }
 
-bool WebSocketClient::parseFrames() {
+bool WebSocketClient::Worker::parseFrames() {
 	auto offset = 0;
-	auto closed = false;
 	const auto size = _incoming.size();
 	const auto data = reinterpret_cast<const uchar*>(_incoming.constData());
-	while (!closed) {
+	while (_state == State::Connected) {
 		if (size - offset < 2) {
 			break;
 		}
@@ -206,26 +351,18 @@ bool WebSocketClient::parseFrames() {
 			}
 		}
 		offset += header + int(length);
-		if (const auto handler = onActivity) {
-			handler();
-		}
+		notify(Event::Activity);
 
 		switch (opcode) {
 		case kOpcodeContinuation:
 		case kOpcodeBinary:
 			if (!payload.isEmpty()) {
-				if (const auto handler = onBinary) {
-					handler(payload);
-					closed = (_state != State::Connected);
-				}
+				notify(Event::Binary, std::move(payload));
 			}
 			break;
 		case kOpcodeText:
 			if (!payload.isEmpty()) {
-				if (const auto handler = onText) {
-					handler(payload);
-					closed = (_state != State::Connected);
-				}
+				notify(Event::Text, std::move(payload));
 			}
 			break;
 		case kOpcodeClose:
@@ -245,7 +382,13 @@ bool WebSocketClient::parseFrames() {
 	return true;
 }
 
-void WebSocketClient::writeFrame(const QByteArray &payload, quint8 opcode) {
+void WebSocketClient::Worker::writeFrame(
+		const QByteArray &payload,
+		quint8 opcode) {
+	if (!_route.current()) {
+		fail();
+		return;
+	}
 	const auto length = quint64(payload.size());
 	auto frame = QByteArray();
 	frame.reserve(int(length) + 14);
@@ -274,36 +417,151 @@ void WebSocketClient::writeFrame(const QByteArray &payload, quint8 opcode) {
 	_socket.write(frame);
 }
 
-void WebSocketClient::sendText(const QByteArray &message) {
+void WebSocketClient::Worker::sendText(const QByteArray &message) {
 	if (_state != State::Connected) {
 		return;
 	}
 	writeFrame(message, kOpcodeText);
 }
 
-void WebSocketClient::sendBinary(const QByteArray &message) {
+void WebSocketClient::Worker::sendBinary(const QByteArray &message) {
 	if (_state != State::Connected) {
 		return;
 	}
 	writeFrame(message, kOpcodeBinary);
 }
 
-void WebSocketClient::close() {
-	if (_state == State::Connected) {
+void WebSocketClient::Worker::close() {
+	if (_state == State::Connected && _route.current()) {
 		writeFrame(QByteArray(), kOpcodeClose);
 	}
 	_state = State::Closed;
 	_socket.abort();
 }
 
-void WebSocketClient::fail() {
-	if (_failed || _state == State::Closed) {
+void WebSocketClient::Worker::fail() {
+	if (_state == State::Closed) {
 		return;
 	}
-	_failed = true;
 	_state = State::Closed;
+	_socket.abort();
+	notify(Event::Closed);
+}
+
+WebSocketClient::WebSocketClient(QObject *parent) : QObject(parent) {
+}
+
+WebSocketClient::WebSocketClient(
+		MTP::NetworkContext &network,
+		QObject *parent)
+: WebSocketClient(parent) {
+	_route = network.snapshot();
+	network.changes() | rpl::on_next([this] { fail(); }, _lifetime);
+}
+
+WebSocketClient::~WebSocketClient() {
+	_lifetime.destroy();
+	close();
+}
+
+void WebSocketClient::connectTo(
+		const QString &host,
+		int port,
+		const QString &requestTarget,
+		const QString &subprotocol) {
+	Expects(QThread::currentThread() == thread());
+	if (_started || _closed) {
+		return;
+	}
+	_started = true;
+	if (!_route.httpProxy()) {
+		fail();
+		return;
+	}
+	_private = std::make_unique<Private>(this, _route);
+	const auto worker = _private->worker;
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->connectTo(host, port, requestTarget, subprotocol);
+		},
+		Qt::QueuedConnection);
+}
+
+void WebSocketClient::sendText(const QByteArray &message) {
+	Expects(QThread::currentThread() == thread());
+	if (!_private || _closed) {
+		return;
+	}
+	const auto worker = _private->worker;
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->sendText(message);
+		},
+		Qt::QueuedConnection);
+}
+
+void WebSocketClient::sendBinary(const QByteArray &message) {
+	Expects(QThread::currentThread() == thread());
+	if (!_private || _closed) {
+		return;
+	}
+	const auto worker = _private->worker;
+	QMetaObject::invokeMethod(
+		worker,
+		[=] {
+			worker->sendBinary(message);
+		},
+		Qt::QueuedConnection);
+}
+
+void WebSocketClient::close() {
+	Expects(QThread::currentThread() == thread());
+	_closed = true;
+	_private.reset();
+}
+
+void WebSocketClient::fail() {
+	if (_closed) {
+		return;
+	}
+	close();
 	if (const auto handler = onClosed) {
 		handler();
+	}
+}
+
+void WebSocketClient::dispatch(Event event, QByteArray payload) {
+	if (_closed) {
+		return;
+	} else if (event == Event::Closed || !_route.current()) {
+		fail();
+		return;
+	}
+	switch (event) {
+	case Event::Connected:
+		if (const auto handler = onConnected) {
+			handler();
+		}
+		break;
+	case Event::Text:
+		if (const auto handler = onText) {
+			handler(std::move(payload));
+		}
+		break;
+	case Event::Binary:
+		if (const auto handler = onBinary) {
+			handler(std::move(payload));
+		}
+		break;
+	case Event::Activity:
+		if (const auto handler = onActivity) {
+			handler();
+		}
+		break;
+	case Event::Closed:
+		Unexpected("Closed WebSocket event.");
 	}
 }
 

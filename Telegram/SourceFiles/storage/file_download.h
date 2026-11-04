@@ -55,6 +55,8 @@ public:
 	enum class FailureReason {
 		NoFailure,
 		FileWriteFailure,
+		NetworkBlocked,
+		NetworkUnsupported,
 		OtherFailure,
 	};
 

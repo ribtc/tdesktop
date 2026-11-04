@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/details/mtproto_dcenter.h"
 #include "mtproto/details/mtproto_rsa_public_key.h"
 #include "mtproto/special_config_request.h"
+#include "mtproto/network_context.h"
 #include "mtproto/session.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
@@ -28,6 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/network_reachability.h"
 #include "test/test_rpc_retry.h"
 
+#include <algorithm>
+#include <condition_variable>
+#include <mutex>
+
 namespace MTP {
 namespace {
 
@@ -37,6 +42,111 @@ constexpr auto kConfigBecomesOldForBlockedIn = 8 * crl::time(1000);
 using namespace details;
 
 std::atomic<int> GlobalAtomicRequestId = 0;
+
+class SessionThreads final {
+public:
+	SessionThreads();
+	~SessionThreads();
+
+	[[nodiscard]] static std::shared_ptr<SessionThreads> Acquire();
+	[[nodiscard]] int allocateSlot();
+	[[nodiscard]] not_null<QThread*> get(int slot, ShiftedDcId dcId);
+
+private:
+	const int _shards;
+	int _nextSlot = 0;
+	std::vector<std::unique_ptr<QThread>> _threads;
+
+};
+
+class SessionWorkers final {
+public:
+	void add();
+	void finish();
+	void wait();
+
+private:
+	std::mutex _mutex;
+	std::condition_variable _condition;
+	int _pending = 0;
+
+};
+
+SessionThreads::SessionThreads()
+: _shards(std::clamp(QThread::idealThreadCount() / 2, 2, 4))
+, _threads(4 * _shards) {
+}
+
+SessionThreads::~SessionThreads() {
+	for (const auto &thread : _threads) {
+		if (thread) {
+			thread->quit();
+		}
+	}
+	for (const auto &thread : _threads) {
+		if (thread) {
+			thread->wait();
+		}
+	}
+}
+
+std::shared_ptr<SessionThreads> SessionThreads::Acquire() {
+	Expects(QThread::currentThread() == QCoreApplication::instance()->thread());
+
+	static auto weak = std::weak_ptr<SessionThreads>();
+	auto result = weak.lock();
+	if (!result) {
+		result = std::make_shared<SessionThreads>();
+		weak = result;
+	}
+	return result;
+}
+
+int SessionThreads::allocateSlot() {
+	const auto result = _nextSlot;
+	_nextSlot = (_nextSlot + 1) % _shards;
+	return result;
+}
+
+not_null<QThread*> SessionThreads::get(int slot, ShiftedDcId dcId) {
+	auto group = 0;
+	auto offset = slot;
+	if (isDownloadDcId(dcId)) {
+		group = 2;
+		offset += GetDcIdShift(dcId) - kBaseDownloadDcShift + BareDcId(dcId);
+	} else if (isUploadDcId(dcId)) {
+		group = 3;
+		offset += GetDcIdShift(dcId) - kBaseUploadDcShift + BareDcId(dcId);
+	} else if (dcId != BareDcId(dcId)) {
+		group = 1;
+	}
+	const auto index = group * _shards + (offset % _shards);
+	auto &thread = _threads[index];
+	if (!thread) {
+		thread = std::make_unique<QThread>();
+		thread->setObjectName(u"MTP Session Pool (%1)"_q.arg(index));
+		thread->start();
+	}
+	return thread.get();
+}
+
+void SessionWorkers::add() {
+	const auto lock = std::lock_guard(_mutex);
+	++_pending;
+}
+
+void SessionWorkers::finish() {
+	const auto lock = std::lock_guard(_mutex);
+	Expects(_pending > 0);
+	if (!--_pending) {
+		_condition.notify_all();
+	}
+}
+
+void SessionWorkers::wait() {
+	auto lock = std::unique_lock(_mutex);
+	_condition.wait(lock, [&] { return !_pending; });
+}
 
 } // namespace
 
@@ -102,6 +212,10 @@ public:
 	[[nodiscard]] auto nonPremiumDelayedRequests() const
 	-> rpl::producer<mtpRequestId>;
 	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
+
+	void quiesceNetwork(Fn<void()> done);
+	void registerSessionWorker(not_null<QObject*> worker);
+	void sessionWorkerDestroyed();
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -204,6 +318,7 @@ private:
 	[[nodiscard]] not_null<QThread*> getThreadForDc(ShiftedDcId shiftedDcId);
 
 	void applyDomainIps(
+		const NetworkSnapshot &request,
 		const QString &host,
 		const QStringList &ips,
 		crl::time expireAt);
@@ -227,9 +342,9 @@ private:
 	const std::unique_ptr<Config> _config;
 	const std::shared_ptr<base::NetworkReachability> _networkReachability;
 
-	std::unique_ptr<QThread> _mainSessionThread;
-	std::unique_ptr<QThread> _otherSessionsThread;
-	std::vector<std::unique_ptr<QThread>> _fileSessionThreads;
+	const std::shared_ptr<SessionThreads> _sessionThreads;
+	const int _sessionThreadSlot;
+	const std::shared_ptr<SessionWorkers> _workerLifetime;
 
 	QString _deviceModelDefault;
 	QString _systemVersion;
@@ -297,8 +412,8 @@ private:
 	rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
-
-	Core::SettingsProxy &_proxySettings;
+	int _sessionWorkers = 0;
+	std::vector<Fn<void()>> _quiesceCallbacks;
 
 	rpl::lifetime _lifetime;
 
@@ -321,11 +436,10 @@ Instance::Private::Private(
 , _mode(mode)
 , _config(std::move(fields.config))
 , _networkReachability(base::NetworkReachability::Instance())
-, _proxySettings(Core::App().settings().proxy()) {
+, _sessionThreads(SessionThreads::Acquire())
+, _sessionThreadSlot(_sessionThreads->allocateSlot())
+, _workerLifetime(std::make_shared<SessionWorkers>()) {
 	Expects(_config != nullptr);
-
-	const auto idealThreadPoolSize = QThread::idealThreadCount();
-	_fileSessionThreads.resize(2 * std::max(idealThreadPoolSize / 2, 1));
 
 	details::unpaused(
 	) | rpl::on_next([=] {
@@ -371,10 +485,15 @@ Instance::Private::Private(
 		_mainDcIdForced = true;
 	}
 
-	_proxySettings.connectionTypeChanges(
+	_instance->network().changes(
 	) | rpl::on_next([=] {
+		_domainResolver = nullptr;
+		_httpUnixtimeLoader = nullptr;
 		if (_configLoader) {
-			_configLoader->setProxyEnabled(_proxySettings.isEnabled());
+			_configLoader->networkChanged();
+		}
+		for (const auto &[shiftedDcId, session] : _sessions) {
+			session->reInitConnection();
 		}
 	}, _lifetime);
 }
@@ -395,18 +514,23 @@ void Instance::Private::start() {
 }
 
 void Instance::Private::resolveProxyDomain(const QString &host) {
+	const auto request = _instance->network().snapshot();
+	if (request.state != NetworkState::Legacy) {
+		return;
+	}
 	if (!_domainResolver) {
 		_domainResolver = std::make_unique<DomainResolver>([=](
 				const QString &host,
 				const QStringList &ips,
 				crl::time expireAt) {
-			applyDomainIps(host, ips, expireAt);
+			applyDomainIps(request, host, ips, expireAt);
 		});
 	}
 	_domainResolver->resolve(host);
 }
 
 void Instance::Private::applyDomainIps(
+		const NetworkSnapshot &request,
 		const QString &host,
 		const QStringList &ips,
 		crl::time expireAt) {
@@ -426,8 +550,6 @@ void Instance::Private::applyDomainIps(
 			return false;
 		});
 		if (i == end(current) && copy.isEmpty()) {
-			// Even if the proxy was changed already, we still want
-			// to refreshOptions in all sessions across all instances.
 			return true;
 		}
 		current.erase(i, end(current));
@@ -436,12 +558,15 @@ void Instance::Private::applyDomainIps(
 		}
 		return true;
 	};
-	for (auto &proxy : _proxySettings.list()) {
-		applyToProxy(proxy);
+	if (!request.current()) {
+		return;
 	}
-	auto selected = _proxySettings.selected();
-	if (applyToProxy(selected) && _proxySettings.isEnabled()) {
-		_proxySettings.setSelected(selected);
+	auto selected = _instance->network().snapshot().proxy;
+	if (applyToProxy(selected)
+		&& _instance->network().updateResolved(
+			request,
+			std::move(selected.resolvedIPs),
+			expireAt)) {
 		for (const auto &[shiftedDcId, session] : _sessions) {
 			session->refreshOptions();
 		}
@@ -467,14 +592,16 @@ void Instance::Private::setGoodProxyDomain(
 		}
 		return true;
 	};
-	for (auto &proxy : _proxySettings.list()) {
-		applyToProxy(proxy);
-	}
-
-	auto selected = _proxySettings.selected();
-	if (applyToProxy(selected) && _proxySettings.isEnabled()) {
-		_proxySettings.setSelected(selected);
-		Core::App().refreshGlobalProxy();
+	const auto request = _instance->network().snapshot();
+	auto selected = request.proxy;
+	if (applyToProxy(selected)
+		&& _instance->network().updateResolved(
+			request,
+			std::move(selected.resolvedIPs),
+			selected.resolvedExpireAt)) {
+		for (const auto &[shiftedDcId, session] : _sessions) {
+			session->refreshOptions();
+		}
 	}
 }
 
@@ -527,8 +654,7 @@ void Instance::Private::requestConfig() {
 		[=](const MTPConfig &result) { configLoadDone(result); },
 		[=](const Error &error, const Response &) {
 			return configLoadFail(error);
-		},
-		_proxySettings.isEnabled());
+		});
 	_configLoader->load();
 }
 
@@ -548,14 +674,23 @@ void Instance::Private::badConfigurationError(const ProxyData &proxy) {
 }
 
 void Instance::Private::syncHttpUnixtime() {
-	if (base::unixtime::http_valid() || _httpUnixtimeLoader) {
+	const auto route = _instance->network().snapshot();
+	if (!route.httpProxy()
+		|| base::unixtime::http_valid()
+		|| _httpUnixtimeLoader) {
 		return;
 	}
-	_httpUnixtimeLoader = std::make_unique<SpecialConfigRequest>([=] {
-		InvokeQueued(_instance, [=] {
-			_httpUnixtimeLoader = nullptr;
-		});
-	}, isTestMode(), configValues().txtDomainString);
+	_httpUnixtimeLoader = std::make_unique<SpecialConfigRequest>(
+		route,
+		[=] {
+			InvokeQueued(_instance, [=] {
+				if (route.current()) {
+					_httpUnixtimeLoader = nullptr;
+				}
+			});
+		},
+		isTestMode(),
+		configValues().txtDomainString);
 }
 
 void Instance::Private::restartedByTimeout(ShiftedDcId shiftedDcId) {
@@ -609,6 +744,53 @@ void Instance::Private::requestCDNConfig() {
 		});
 		Local::writeSettings();
 	}).send();
+}
+
+void Instance::Private::registerSessionWorker(not_null<QObject*> worker) {
+	++_sessionWorkers;
+	const auto lifetime = _workerLifetime;
+	lifetime->add();
+	const auto observer = new QObject();
+	observer->moveToThread(worker->thread());
+	QObject::connect(observer, &QObject::destroyed, [lifetime] {
+		lifetime->finish();
+	});
+	// WHY: QObject emits destroyed before deleting its children. Queue the
+	// acknowledgement on the worker thread so every socket destructor has
+	// finished before the main thread can open the next route.
+	QObject::connect(worker, &QObject::destroyed, observer, [=] {
+		InvokeQueued(_instance, [=] { sessionWorkerDestroyed(); });
+		observer->deleteLater();
+	}, Qt::QueuedConnection);
+}
+
+void Instance::Private::quiesceNetwork(Fn<void()> done) {
+	Expects(!_instance->network().snapshot().allowed());
+	Expects(done != nullptr);
+
+	_quiesceCallbacks.push_back(std::move(done));
+	for (const auto &[shiftedDcId, session] : _sessions) {
+		session->stop();
+	}
+	if (!_sessionWorkers) {
+		const auto callbacks = base::take(_quiesceCallbacks);
+		InvokeQueued(_instance, [callbacks] {
+			for (const auto &callback : callbacks) {
+				callback();
+			}
+		});
+	}
+}
+
+void Instance::Private::sessionWorkerDestroyed() {
+	Expects(_sessionWorkers > 0);
+	if (--_sessionWorkers || _quiesceCallbacks.empty()) {
+		return;
+	}
+	const auto callbacks = base::take(_quiesceCallbacks);
+	for (const auto &callback : callbacks) {
+		callback();
+	}
 }
 
 void Instance::Private::restart() {
@@ -1757,52 +1939,7 @@ void Instance::Private::scheduleSessionDestroy(ShiftedDcId shiftedDcId) {
 
 not_null<QThread*> Instance::Private::getThreadForDc(
 		ShiftedDcId shiftedDcId) {
-	static const auto EnsureStarted = [](
-			std::unique_ptr<QThread> &thread,
-			auto name) {
-		if (!thread) {
-			thread = std::make_unique<QThread>();
-			thread->setObjectName(name());
-			thread->start();
-		}
-		return thread.get();
-	};
-	static const auto FindOne = [](
-			std::vector<std::unique_ptr<QThread>> &threads,
-			const char *prefix,
-			int index,
-			bool shift) {
-		Expects(!threads.empty());
-		Expects(!(threads.size() % 2));
-
-		const auto count = int(threads.size());
-		index %= count;
-		if (index >= count / 2) {
-			index = (count - 1) - (index - count / 2);
-		}
-		if (shift) {
-			index = (index + count / 2) % count;
-		}
-		return EnsureStarted(threads[index], [=] {
-			return QString("MTP %1 Session (%2)").arg(prefix).arg(index);
-		});
-	};
-	if (shiftedDcId == BareDcId(shiftedDcId)) {
-		return EnsureStarted(_mainSessionThread, [] {
-			return QString("MTP Main Session");
-		});
-	} else if (isDownloadDcId(shiftedDcId)) {
-		const auto index = GetDcIdShift(shiftedDcId) - kBaseDownloadDcShift;
-		const auto composed = index + BareDcId(shiftedDcId);
-		return FindOne(_fileSessionThreads, "Download", composed, false);
-	} else if (isUploadDcId(shiftedDcId)) {
-		const auto index = GetDcIdShift(shiftedDcId) - kBaseUploadDcShift;
-		const auto composed = index + BareDcId(shiftedDcId);
-		return FindOne(_fileSessionThreads, "Upload", composed, true);
-	}
-	return EnsureStarted(_otherSessionsThread, [] {
-		return QString("MTP Other Session");
-	});
+	return _sessionThreads->get(_sessionThreadSlot, shiftedDcId);
 }
 
 void Instance::Private::scheduleKeyDestroy(ShiftedDcId shiftedDcId) {
@@ -1926,28 +2063,20 @@ void Instance::Private::prepareToDestroy() {
 	}
 	_mainSession = nullptr;
 
-	auto threads = std::vector<std::unique_ptr<QThread>>();
-	threads.push_back(base::take(_mainSessionThread));
-	threads.push_back(base::take(_otherSessionsThread));
-	for (auto &thread : base::take(_fileSessionThreads)) {
-		threads.push_back(std::move(thread));
-	}
-	for (const auto &thread : threads) {
-		if (thread) {
-			thread->quit();
-		}
-	}
-	for (const auto &thread : threads) {
-		if (thread) {
-			thread->wait();
-		}
-	}
+	_sessionsToDestroy.clear();
+	_workerLifetime->wait();
 }
 
 Instance::Instance(Mode mode, Fields &&fields)
 : QObject()
+, _network(fields.network)
 , _private(std::make_unique<Private>(this, mode, std::move(fields))) {
 	_private->start();
+}
+
+NetworkContext &Instance::network() const {
+	Expects(_network != nullptr);
+	return *_network;
 }
 
 void Instance::resolveProxyDomain(const QString &host) {
@@ -2032,6 +2161,14 @@ void Instance::requestConfigIfOld() {
 
 void Instance::requestCDNConfig() {
 	_private->requestCDNConfig();
+}
+
+void Instance::quiesceNetwork(Fn<void()> done) {
+	_private->quiesceNetwork(std::move(done));
+}
+
+void Instance::registerSessionWorker(not_null<QObject*> worker) {
+	_private->registerSessionWorker(worker);
 }
 
 void Instance::restart() {

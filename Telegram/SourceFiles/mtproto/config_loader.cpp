@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/config_loader.h"
 
+#include "mtproto/network_context.h"
+
 #include "base/random.h"
 #include "mtproto/special_config_request.h"
 #include "mtproto/facade.h"
@@ -27,11 +29,9 @@ ConfigLoader::ConfigLoader(
 	not_null<Instance*> instance,
 	const QString &phone,
 	Fn<void(const MTPConfig &result)> onDone,
-	FailHandler onFail,
-	bool proxyEnabled)
+	FailHandler onFail)
 : _instance(instance)
 , _phone(phone)
-, _proxyEnabled(proxyEnabled)
 , _doneHandler(onDone)
 , _failHandler(onFail) {
 	_enumDCTimer.setCallback([this] { enumerate(); });
@@ -116,7 +116,8 @@ void ConfigLoader::enumerate() {
 }
 
 void ConfigLoader::refreshSpecialLoader() {
-	if (_proxyEnabled || _instance->isKeysDestroyer()) {
+	if (_instance->isKeysDestroyer()
+		|| !_instance->network().snapshot().httpProxy()) {
 		_specialLoader.reset();
 		return;
 	}
@@ -136,19 +137,27 @@ void ConfigLoader::setPhone(const QString &phone) {
 }
 
 void ConfigLoader::createSpecialLoader() {
+	if (!_instance->network().snapshot().httpProxy()) {
+		_specialLoader.reset();
+		return;
+	}
 	const auto testMode = _instance->isTestMode();
 	_triedSpecialEndpoints.clear();
-	_specialLoader = std::make_unique<SpecialConfigRequest>([=](
-			DcId dcId,
-			const std::string &ip,
-			int port,
-			bytes::const_span secret) {
-		if (ip.empty()) {
-			_specialLoader = nullptr;
-		} else {
-			addSpecialEndpoint(dcId, ip, port, secret);
-		}
-	}, testMode, _instance->configValues().txtDomainString, _phone);
+	_specialLoader = std::make_unique<SpecialConfigRequest>(
+		_instance->network().snapshot(),
+		[=](DcId dcId,
+				const std::string &ip,
+				int port,
+				bytes::const_span secret) {
+			if (ip.empty()) {
+				_specialLoader = nullptr;
+			} else {
+				addSpecialEndpoint(dcId, ip, port, secret);
+			}
+		},
+		testMode,
+		_instance->configValues().txtDomainString,
+		_phone);
 }
 
 void ConfigLoader::addSpecialEndpoint(
@@ -176,7 +185,7 @@ void ConfigLoader::addSpecialEndpoint(
 
 void ConfigLoader::sendSpecialRequest() {
 	terminateSpecialRequest();
-	if (_proxyEnabled) {
+	if (!_instance->network().snapshot().httpProxy()) {
 		_specialLoader.reset();
 		return;
 	}
@@ -234,8 +243,12 @@ void ConfigLoader::specialConfigLoaded(const MTPConfig &result) {
 	_instance->dcOptions().setFromList(data.vdc_options());
 }
 
-void ConfigLoader::setProxyEnabled(bool value) {
-	_proxyEnabled = value;
+void ConfigLoader::networkChanged() {
+	_specialLoader.reset();
+	_specialEndpoints.clear();
+	_triedSpecialEndpoints.clear();
+	_specialEnumTimer.cancel();
+	terminateSpecialRequest();
 }
 
 } // namespace details

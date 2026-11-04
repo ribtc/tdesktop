@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
+#include <rpl/lifetime.h>
 #include "gram/api/gram_api_stream.h"
 
 namespace Core {
@@ -80,6 +81,7 @@ private:
 	quint32 _messageId = 0;
 	bool _started = false;
 	bool _historyRecheckedOnce = false;
+	rpl::lifetime _lifetime;
 
 };
 

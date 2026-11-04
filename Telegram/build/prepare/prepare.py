@@ -64,6 +64,7 @@ optionsList = [
     'skip-release',
     'build-stackwalk',
     'qt-asserts',
+    'qt-release-only',
 ]
 options = []
 runCommand = []
@@ -317,6 +318,10 @@ def filterByPlatform(commands):
                     inscope = False
                 elif len(scopes) == 1:
                     continue
+            if 'qtdebug' in scopes:
+                inscope = inscope and 'qt-release-only' not in options
+            if 'qtrelease' in scopes:
+                inscope = inscope and 'qt-release-only' in options
             if 'asserts' in scopes:
                 inscope = inscope and 'qt-asserts' in options
             skip = inscope if m.group(1) == '!' else not inscope
@@ -535,7 +540,7 @@ win:
     SET CHERE_INVOKING=enabled_from_arguments
     SET MSYS2_PATH_TYPE=inherit
 
-    powershell -Command "iwr -OutFile ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2026-09-27/msys2-base-x86_64-20260927.sfx.exe"
+    curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 --output ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2026-09-27/msys2-base-x86_64-20260927.sfx.exe
     msys64.exe
     del msys64.exe
 
@@ -561,12 +566,12 @@ win:
 stage('NuGet', """
 win:
     mkdir NuGet
-    powershell -Command "iwr -OutFile ./NuGet/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe"
+    curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 --output ./NuGet/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
 """, 'ThirdParty')
 
 stage('jom', """
 win:
-    powershell -Command "iwr -OutFile ./jom.zip https://master.qt.io/official_releases/jom/jom_1_1_3.zip"
+    curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 --output ./jom.zip https://master.qt.io/official_releases/jom/jom_1_1_3.zip
     powershell -Command "Expand-Archive ./jom.zip"
     del jom.zip
 """, 'ThirdParty')
@@ -587,7 +592,7 @@ mac:
 rustToolchain = '1.96.1'
 stage('rust', """
 win:
-    powershell -Command "iwr -OutFile ./rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
+    curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 --output ./rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
     SET "RUSTUP_HOME=%THIRDPARTY_DIR%\\rust\\rustup"
     SET "CARGO_HOME=%THIRDPARTY_DIR%\\rust\\cargo"
     rustup-init.exe -y --no-modify-path --profile minimal ^
@@ -1765,6 +1770,11 @@ win:
     SET ASSERTS=
 release:
     SET CONFIGURATIONS=-debug-and-release
+win_qtdebug:
+    SET DEBUG_INFO=-force-debug-info
+win_qtrelease:
+    SET CONFIGURATIONS=-release
+    SET DEBUG_INFO=
 win_asserts:
     SET ASSERTS=-force-asserts
 win:
@@ -1778,7 +1788,7 @@ win:
     configure -prefix "%LIBS_DIR%\\Qt-%QT%" ^
         %CONFIGURATIONS% ^
         %ASSERTS% ^
-        -force-debug-info ^
+        %DEBUG_INFO% ^
         -opensource ^
         -confirm-license ^
         -static ^
@@ -1827,8 +1837,10 @@ win:
         -D LCMS2_INCLUDE_DIR="%LCMS2_DIR%\\include" ^
         -D LCMS2_LIBRARIES="%LCMS2_DIR%\\out\\Release\\src\\liblcms2.a"
 
+win_qtdebug:
     cmake --build . --config Debug
     cmake --install . --config Debug
+win:
     cmake --build .
     cmake --install .
 """)

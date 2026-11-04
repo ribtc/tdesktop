@@ -11,13 +11,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "core/shortcuts.h"
 #include "core/crash_reports.h"
+#include "core/crash_report_window.h"
+#include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "main/main_session_settings.h"
 #include "data/data_session.h"
 #include "data/data_changes.h"
 #include "data/data_user.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
+#include "storage/storage_account_index.h"
 #include "storage/storage_domain.h"
 #include "storage/storage_account.h"
 #include "storage/localstorage.h"
@@ -72,6 +76,10 @@ Wallet::VaultRuntime &Domain::walletKeyring() {
 	return *_walletKeyring;
 }
 
+Core::ProxyCheckQueue &Domain::proxyChecks() {
+	return _proxyChecks;
+}
+
 bool Domain::started() const {
 	return !_accounts.empty();
 }
@@ -91,6 +99,10 @@ Storage::StartResult Domain::startWith(
 		crl::on_main(&Core::App(), [=] { suggestExportIfNeeded(); });
 	} else {
 		Assert(!started());
+		if (result == Storage::StartResult::ReadFailed) {
+			LOG(("FATAL: Existing account data could not be read. No new local key was created."));
+			new NotStartedWindow(tr::lng_storage_start_failed(tr::now));
+		}
 	}
 	return result;
 }
@@ -326,8 +338,32 @@ void Domain::scheduleUpdateUnreadBadge() {
 }
 
 not_null<Main::Account*> Domain::add(MTP::Environment environment) {
+	return addAccount(environment, nullptr, QString());
+}
+
+not_null<Account*> Domain::addAuthorized(
+		std::shared_ptr<MTP::AuthKey> key,
+		const MTPUser &user,
+		const QString &proxyId) {
+	Expects(key != nullptr);
+	Expects(user.type() == mtpc_user && user.c_user().is_self());
+
+	const auto account = addAccount(
+		MTP::Environment::Production,
+		std::move(key),
+		proxyId);
+	account->createSession(user);
+	account->local().enforceModernStorageIdBots();
+	account->local().writeMtpData();
+	scheduleWriteAccounts();
+	return account;
+}
+
+not_null<Account*> Domain::addAccount(
+		MTP::Environment environment,
+		std::shared_ptr<MTP::AuthKey> key,
+		const QString &proxyId) {
 	Expects(started());
-	Expects(_accounts.size() < kPremiumMaxAccounts);
 
 	static const auto cloneConfig = [](const MTP::Config &config) {
 		return std::make_unique<MTP::Config>(config);
@@ -350,16 +386,23 @@ not_null<Main::Account*> Domain::add(MTP::Environment environment) {
 			? cloneConfig(Core::App().fallbackProductionConfig())
 			: std::make_unique<MTP::Config>(environment);
 	}();
-	auto index = 0;
-	while (ranges::contains(_accounts, index, &AccountWithIndex::index)) {
-		++index;
+	auto indices = std::vector<int>();
+	indices.reserve(_accounts.size());
+	for (const auto &entry : _accounts) {
+		indices.push_back(entry.index);
 	}
+	const auto index = Storage::NextAccountIndex(indices);
+	Expects(index >= 0);
 	_accounts.push_back(AccountWithIndex{
 		.index = index,
 		.account = std::make_unique<Account>(this, _dataName, index)
 	});
 	const auto account = _accounts.back().account.get();
-	account->setMtpMainDcId(mainDcId);
+	account->setMtpMainDcId(key ? key->dcId() : mainDcId);
+	if (key) {
+		account->setLegacyMtpKey(std::move(key));
+		account->local().writePref<QString>("account-proxy-binding", proxyId);
+	}
 	_local->startAdded(account, std::move(config));
 	watchSession(account);
 	_accountsChanges.fire({});
@@ -384,17 +427,15 @@ void Domain::addActivated(MTP::Environment environment, bool newWindow) {
 			activate(account);
 		}
 	};
-	if (accounts().size() < maxAccounts()) {
-		added(add(environment));
-	} else {
-		for (auto &[index, account] : accounts()) {
-			if (!account->sessionExists()
-				&& account->mtp().environment() == environment) {
-				added(account.get());
-				break;
-			}
+
+	for (const auto &[index, account] : accounts()) {
+		if (!account->sessionExists()
+			&& account->mtp().environment() == environment) {
+			added(account.get());
+			return;
 		}
 	}
+	added(add(environment));
 }
 
 void Domain::watchSession(not_null<Account*> account) {
@@ -405,12 +446,6 @@ void Domain::watchSession(not_null<Account*> account) {
 		session->data().unreadBadgeChanges(
 		) | rpl::on_next([=] {
 			scheduleUpdateUnreadBadge();
-		}, session->lifetime());
-
-		Data::AmPremiumValue(
-			session
-		) | rpl::on_next([=] {
-			_lastMaxAccounts = maxAccounts();
 		}, session->lifetime());
 	}, account->lifetime());
 
@@ -518,7 +553,8 @@ void Domain::removeRedundantAccounts() {
 	const auto was = _accounts.size();
 	for (auto i = _accounts.begin(); i != _accounts.end();) {
 		if (Core::App().separateWindowFor(not_null(i->account.get()))
-			|| i->account->sessionExists()) {
+			|| i->account->sessionExists()
+			|| i->account->pendingLogin()) {
 			++i;
 			continue;
 		}
@@ -609,20 +645,6 @@ void Domain::scheduleWriteAccounts() {
 		_writeAccountsScheduled = false;
 		_local->writeAccounts();
 	});
-}
-
-int Domain::maxAccounts() const {
-	const auto premiumCount = ranges::count_if(accounts(), [](
-			const Main::Domain::AccountWithIndex &d) {
-		return d.account->sessionExists()
-			&& (d.account->session().premium()
-				|| d.account->session().isTestMode());
-	});
-	return std::min(int(premiumCount) + kMaxAccounts, kPremiumMaxAccounts);
-}
-
-rpl::producer<int> Domain::maxAccountsChanges() const {
-	return _lastMaxAccounts.changes();
 }
 
 } // namespace Main

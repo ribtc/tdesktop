@@ -537,7 +537,9 @@ void TcpConnection::connectToServer(
 		: AbstractSocket::Create(
 			thread(),
 			secret,
-			ToNetworkProxy(_proxy),
+			(_proxy.type == ProxyData::Type::None)
+				? QNetworkProxy(QNetworkProxy::NoProxy)
+				: ToNetworkProxy(_proxy),
 			protocolForFiles);
 	_protocolDcId = protocolDcId;
 

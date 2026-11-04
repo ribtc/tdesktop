@@ -10,7 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/group/calls_group_common.h"
 #include "calls/group/calls_group_messages.h"
 #include "calls/calls_instance.h"
+#include "calls/calls_network.h"
 #include "main/session/session_show.h"
+#include "main/main_account.h"
 #include "main/main_app_config.h"
 #include "main/main_session.h"
 #include "api/api_send_progress.h"
@@ -604,6 +606,7 @@ GroupCall::GroupCall(
 , _peer(join.peer)
 , _history(_peer->owner().history(_peer))
 , _api(&_peer->session().mtp())
+, _network(_peer->session().account().network().snapshot())
 , _messages(std::make_unique<Group::Messages>(this, &_api))
 , _joinAs(join.joinAs)
 , _possibleJoinAs(std::move(join.possibleJoinAs))
@@ -638,6 +641,22 @@ GroupCall::GroupCall(
 , _rtmp(join.rtmp)
 , _singleSourceVolume(Group::kDefaultVolume) {
 	applyInputCall(inputCall);
+	_peer->session().account().network().changes(
+	) | rpl::on_next([=] {
+		if (!_network.current()
+			&& state() != State::Failed
+			&& !CheckMediaAllowed(_network, MediaTransport::MtpBroadcast)) {
+			revokeNetwork();
+		}
+	}, _lifetime);
+	const auto transport = (conference()
+		|| (!_sharedCall && (startInfo.migrating || startInfo.show)))
+		? MediaTransport::Rtc
+		: MediaTransport::MtpBroadcast;
+	if (!CheckMediaAllowed(_network, transport)) {
+		crl::on_main(this, [=] { revokeNetwork(); });
+		return;
+	}
 
 	_muted.value(
 	) | rpl::combine_previous(
@@ -915,6 +934,9 @@ rpl::producer<bool> GroupCall::canManageValue() const {
 }
 
 void GroupCall::toggleVideo(bool active) {
+	if (active && !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	if (!_instance || !_id) {
 		return;
 	}
@@ -926,6 +948,9 @@ void GroupCall::toggleVideo(bool active) {
 void GroupCall::toggleScreenSharing(
 		std::optional<QString> uniqueId,
 		bool withAudio) {
+	if (uniqueId && !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	if (!_instance || !_id) {
 		return;
 	} else if (!uniqueId) {
@@ -1592,6 +1617,13 @@ void GroupCall::saveDefaultJoinAs(not_null<PeerData*> as) {
 }
 
 void GroupCall::rejoin(not_null<PeerData*> as) {
+	const auto transport = conference()
+		? MediaTransport::Rtc
+		: MediaTransport::MtpBroadcast;
+	if (!CheckMediaAllowed(_network, transport)) {
+		revokeNetwork();
+		return;
+	}
 	if (state() != State::Joining
 		&& state() != State::Joined
 		&& state() != State::Connecting) {
@@ -1611,6 +1643,9 @@ void GroupCall::rejoin(not_null<PeerData*> as) {
 	_systemMuteReconciled = false;
 	setState(State::Joining);
 	if (!tryCreateController()) {
+		if (!_instance) {
+			return;
+		}
 		setInstanceMode(InstanceMode::None);
 	}
 	applyMeInCallLocally();
@@ -1969,6 +2004,9 @@ void GroupCall::checkNextJoinAction() {
 }
 
 void GroupCall::rejoinPresentation() {
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	if (!_joinState.ssrc
 		|| _screenJoinState.action == JoinAction::Joining
 		|| !isSharingScreen()) {
@@ -1981,6 +2019,9 @@ void GroupCall::rejoinPresentation() {
 	_screenJoinState.action = JoinAction::Joining;
 	_screenJoinState.ssrc = 0;
 	if (!tryCreateScreencast()) {
+		if (!_screenInstance) {
+			return;
+		}
 		setScreenInstanceMode(InstanceMode::None);
 	}
 	LOG(("Call Info: Requesting join screen payload."));
@@ -2295,6 +2336,10 @@ void GroupCall::addVideoOutput(
 }
 
 void GroupCall::setMuted(MuteState mute) {
+	if ((mute == MuteState::Active || mute == MuteState::PushToTalk)
+		&& !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	const auto set = [=] {
 		const auto was = muted();
 		const auto wasSpeaking = (was == MuteState::Active)
@@ -2396,7 +2441,9 @@ void GroupCall::handlePossibleCreateOrJoinResponse(
 		if (!_screenInstance) {
 			return;
 		}
-		setScreenInstanceMode(InstanceMode::Rtc);
+		if (!setScreenInstanceMode(InstanceMode::Rtc)) {
+			return;
+		}
 		data.vparams().match([&](const MTPDdataJSON &data) {
 			const auto json = data.vdata().v;
 			const auto response = ParseJoinResponse(json);
@@ -2427,9 +2474,13 @@ void GroupCall::handlePossibleCreateOrJoinResponse(
 					_rtmpUrl = stream->rtmpInfo.url;
 					_rtmpKey = stream->rtmpInfo.key;
 				}
-				setInstanceMode(InstanceMode::Stream);
+				if (!setInstanceMode(InstanceMode::Stream)) {
+					return;
+				}
 			} else {
-				setInstanceMode(InstanceMode::Rtc);
+				if (!setInstanceMode(InstanceMode::Rtc)) {
+					return;
+				}
 				setCameraEndpoint(endpoint ? endpoint->id : std::string());
 				_instance->setJoinResponsePayload(json.toStdString());
 			}
@@ -3005,6 +3056,10 @@ auto GroupCall::lookupVideoCodecPreferences() const
 }
 
 bool GroupCall::tryCreateController() {
+	if (!CheckMediaAllowed(_network, MediaTransport::MtpBroadcast)) {
+		revokeNetwork();
+		return false;
+	}
 	if (_instance) {
 		return false;
 	}
@@ -3158,6 +3213,9 @@ bool GroupCall::tryCreateController() {
 }
 
 bool GroupCall::tryCreateScreencast() {
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return false;
+	}
 	if (_screenInstance) {
 		return false;
 	}
@@ -3190,6 +3248,9 @@ bool GroupCall::tryCreateScreencast() {
 }
 
 void GroupCall::broadcastPartStart(std::shared_ptr<LoadPartTask> task) {
+	if (!MediaAllowed(_network, MediaTransport::MtpBroadcast)) {
+		return;
+	}
 	const auto raw = task.get();
 	const auto time = raw->time();
 	const auto scale = raw->scale();
@@ -3328,6 +3389,9 @@ void GroupCall::mediaChannelDescriptionsCancel(
 
 void GroupCall::requestCurrentTimeStart(
 		std::shared_ptr<RequestCurrentTimeTask> task) {
+	if (!MediaAllowed(_network, MediaTransport::MtpBroadcast)) {
+		return;
+	}
 	if (!_rtmp) {
 		task->done(approximateServerTimeInMs());
 		return;
@@ -3839,8 +3903,19 @@ void GroupCall::notifyAboutAllowedToSpeak() {
 	_allowedToSpeakNotifications.fire({});
 }
 
-void GroupCall::setInstanceMode(InstanceMode mode) {
+bool GroupCall::setInstanceMode(InstanceMode mode) {
 	Expects(_instance != nullptr);
+
+	const auto transport = (mode == InstanceMode::Rtc)
+		? MediaTransport::Rtc
+		: MediaTransport::MtpBroadcast;
+	if (mode != InstanceMode::None
+		&& !CheckMediaAllowed(_network, transport)) {
+		destroyScreencast();
+		destroyController();
+		finish(FinishType::Failed);
+		return false;
+	}
 
 	_instanceMode = mode;
 
@@ -3853,10 +3928,17 @@ void GroupCall::setInstanceMode(InstanceMode mode) {
 		}
 		Unexpected("Mode in GroupCall::setInstanceMode.");
 	}(), true, _rtmp);
+	return true;
 }
 
-void GroupCall::setScreenInstanceMode(InstanceMode mode) {
+bool GroupCall::setScreenInstanceMode(InstanceMode mode) {
 	Expects(_screenInstance != nullptr);
+
+	if (mode != InstanceMode::None
+		&& !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		destroyScreencast();
+		return false;
+	}
 
 	_screenInstanceMode = mode;
 
@@ -3869,6 +3951,7 @@ void GroupCall::setScreenInstanceMode(InstanceMode mode) {
 		}
 		Unexpected("Mode in GroupCall::setInstanceMode.");
 	}(), true, false);
+	return true;
 }
 
 void GroupCall::maybeSendMutedUpdate(MuteState previous) {
@@ -4250,6 +4333,19 @@ MTPInputGroupCall GroupCall::inputCallSafe() const {
 		: _conferenceLinkSlug.isEmpty()
 		? inputCall()
 		: MTP_inputGroupCallSlug(MTP_string(_conferenceLinkSlug));
+}
+
+void GroupCall::revokeNetwork() {
+	_lastSpokeCheckTimer.cancel();
+	_checkJoinedTimer.cancel();
+	_pushToTalkCancelTimer.cancel();
+	_connectingSoundTimer.cancel();
+	for (const auto &[task, part] : base::take(_broadcastParts)) {
+		_api.request(part.requestId).cancel();
+	}
+	_api.request(base::take(_requestCurrentTimeRequestId)).cancel();
+	_requestCurrentTimes.clear();
+	setState(State::Failed);
 }
 
 void GroupCall::destroyController() {

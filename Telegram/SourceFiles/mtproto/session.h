@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
+#include "mtproto/network_context.h"
 #include "mtproto/mtproto_response.h"
 #include "mtproto/mtproto_proxy_data.h"
 #include "mtproto/details/mtproto_serialized_request.h"
@@ -35,7 +36,7 @@ struct SessionOptions {
 		const QString &systemLangCode,
 		const QString &cloudLangCode,
 		const QString &langPackName,
-		const ProxyData &proxy,
+		NetworkSnapshot network,
 		bool useIPv4,
 		bool useIPv6,
 		bool useHttp,
@@ -44,6 +45,7 @@ struct SessionOptions {
 	QString systemLangCode;
 	QString cloudLangCode;
 	QString langPackName;
+	NetworkSnapshot network;
 	ProxyData proxy;
 	bool useIPv4 = true;
 	bool useIPv6 = true;
@@ -169,7 +171,7 @@ public:
 	void releaseKeyCreationOnFail();
 	void destroyTemporaryKey(uint64 keyId);
 
-	void notifyDcConnectionInited();
+	void notifyDcConnectionInited(const SessionOptions &options);
 
 	void ping();
 	void cancel(mtpRequestId requestId, mtpMsgId msgId);

@@ -37,6 +37,7 @@ include(cmake/td_iv.cmake)
 include(cmake/td_lang.cmake)
 include(cmake/td_mtproto.cmake)
 include(cmake/td_scheme.cmake)
+include(cmake/td_session_file.cmake)
 include(cmake/td_tde2e.cmake)
 include(cmake/td_ui.cmake)
 include(cmake/td_webauthn.cmake)
@@ -80,6 +81,7 @@ PRIVATE
     tdesktop::td_lang
     tdesktop::td_mtproto
     tdesktop::td_scheme
+    tdesktop::td_session_file
     tdesktop::td_tde2e
     tdesktop::td_ui
     tdesktop::td_webauthn
@@ -488,6 +490,8 @@ PRIVATE
     calls/calls_emoji_fingerprint.h
     calls/calls_instance.cpp
     calls/calls_instance.h
+    calls/calls_network.cpp
+    calls/calls_network.h
     calls/calls_panel.cpp
     calls/calls_panel.h
     calls/calls_panel_background.cpp
@@ -561,6 +565,7 @@ PRIVATE
     chat_helpers/ttl_media_layer_widget.h
     core/application.cpp
     core/application.h
+    core/account_network_restrictions.h
     core/proxy_rotation_manager.cpp
     core/proxy_rotation_manager.h
     core/cached_webview_availability.h
@@ -580,6 +585,12 @@ PRIVATE
     core/core_settings.h
     core/core_settings_proxy.cpp
     core/core_settings_proxy.h
+    core/proxy_import.cpp
+    core/proxy_import.h
+    core/proxy_check_queue.cpp
+    core/proxy_check_queue.h
+    core/proxy_library.cpp
+    core/proxy_library.h
     core/crash_report_window.cpp
     core/crash_report_window.h
     core/crash_reports.cpp
@@ -662,6 +673,8 @@ PRIVATE
     data/components/recent_peers.h
     data/components/recent_shared_media_gifts.cpp
     data/components/recent_shared_media_gifts.h
+    data/components/retained_messages.cpp
+    data/components/retained_messages.h
     data/components/scheduled_messages.cpp
     data/components/scheduled_messages.h
     data/components/sponsored_messages.cpp
@@ -1492,6 +1505,8 @@ PRIVATE
     intro/intro_signup.cpp
     intro/intro_signup.h
     intro/intro_start.cpp
+    intro/session_import_box.cpp
+    intro/session_import_box.h
     intro/intro_start.h
     intro/intro_step.cpp
     intro/intro_step.h
@@ -1535,6 +1550,8 @@ PRIVATE
     layout/layout_document_generic_preview.h
     layout/layout_item_base.cpp
     layout/layout_item_base.h
+    main/account_management.cpp
+    main/account_management.h
     main/main_account.cpp
     main/main_account.h
     main/main_app_config.cpp
@@ -1542,7 +1559,11 @@ PRIVATE
     main/main_app_config_values.cpp
     main/main_app_config_values.h
     main/main_domain.cpp
+    main/session_import.cpp
+    main/session_import.h
     main/main_domain.h
+    main/main_protection.cpp
+    main/main_protection.h
     main/main_session.cpp
     main/main_session.h
     main/main_session_settings.cpp
@@ -1711,6 +1732,10 @@ PRIVATE
     mtproto/details/mtproto_web_proxy_socket.h
     mtproto/facade.cpp
     mtproto/facade.h
+    mtproto/http_transport.cpp
+    mtproto/http_transport.h
+    mtproto/network_context.cpp
+    mtproto/network_context.h
     mtproto/mtp_instance.cpp
     mtproto/mtp_instance.h
     mtproto/proxy_check.cpp
@@ -1928,6 +1953,10 @@ PRIVATE
     settings/cloud_password/settings_cloud_password_validate_icon.h
     settings/sections/settings_active_sessions.cpp
     settings/sections/settings_active_sessions.h
+    settings/sections/settings_protection.cpp
+    settings/sections/settings_protection.h
+    settings/sections/settings_proxy_management.cpp
+    settings/sections/settings_proxy_management.h
     settings/sections/settings_advanced.cpp
     settings/sections/settings_advanced.h
     settings/sections/settings_chat.cpp
@@ -1953,6 +1982,8 @@ PRIVATE
     settings/sections/settings_folders.h
     settings/sections/settings_global_ttl.cpp
     settings/sections/settings_global_ttl.h
+    settings/sections/settings_account_management.cpp
+    settings/sections/settings_account_management.h
     settings/sections/settings_information.cpp
     settings/sections/settings_information.h
     settings/settings_intro.cpp
@@ -2022,6 +2053,8 @@ PRIVATE
     storage/storage_account.h
     storage/storage_cloud_blob.cpp
     storage/storage_cloud_blob.h
+    storage/storage_account_index.cpp
+    storage/storage_account_index.h
     storage/storage_domain.cpp
     storage/storage_domain.h
     storage/storage_facade.cpp
@@ -2428,6 +2461,10 @@ PRIVATE
     window/window_controller.h
     window/window_filters_favorite.cpp
     window/window_filters_favorite.h
+    window/window_account_management.cpp
+    window/window_account_management.h
+    window/window_accounts_rail.cpp
+    window/window_accounts_rail.h
     window/window_filters_menu.cpp
     window/window_filters_menu.h
     window/window_history_hider.cpp
@@ -2602,6 +2639,7 @@ if (WIN32)
         )
     endif()
 
+    target_link_libraries(Telegram PRIVATE dnsapi)
     target_link_options(Telegram PRIVATE /PDBPAGESIZE:8192)
 
     if (DESKTOP_APP_WIN7_BASELINE)

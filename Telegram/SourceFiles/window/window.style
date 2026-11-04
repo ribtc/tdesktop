@@ -226,6 +226,42 @@ createThemeLink: InputField(defaultInputField) {
 	heightMin: 34px;
 }
 
+windowAccountsWidth: 64px;
+windowAccountsHeader: 40px;
+windowAccountsTitleTop: 15px;
+windowAccountsRow: 76px;
+windowAccountsUserpic: 40px;
+windowAccountsPhotoTop: 4px;
+windowAccountsRingGap: 4px;
+windowAccountsRingWidth: 2px;
+windowAccountsBadgeSkip: 6px;
+windowAccountsStatusSize: 9px;
+windowAccountsNameFont: font(11px);
+windowAccountsTitle: FlatLabel(defaultFlatLabel) {
+	textFg: sideBarTextFg;
+	align: align(center);
+	style: TextStyle(defaultTextStyle) {
+		font: windowAccountsNameFont;
+	}
+}
+windowAccountsAllTextTop: 38px;
+windowAccountsCountTop: 54px;
+windowAccountsCount: FlatLabel(windowAccountsTitle) {
+	textFg: windowBgActive;
+}
+windowAccountsAll: IconButton {
+	width: windowAccountsWidth;
+	height: 76px;
+	icon: icon {{ "menu/groups", sideBarIconFg }};
+	iconPosition: point(-1px, 6px);
+	ripple: defaultRippleAnimation;
+}
+windowAccountsAdd: IconButton(windowAccountsAll) {
+	height: 52px;
+	iconPosition: point(-1px, -1px);
+	icon: icon {{ "menu/add", sideBarIconFg }};
+}
+
 windowFiltersWidth: 72px;
 windowFiltersButton: SideBarButton(defaultSideBarButton) {
 	textTop: 40px;
@@ -408,3 +444,136 @@ macCautionIconSize: 16;
 macWindowRoundRadius: 10;
 macWindowShadowTopLeft: icon {{ "mac_window_shadow_top_left", windowShadowFg }};
 macTrayIcon: icon {{ "mac_tray_icon", windowFg }};
+
+proxyManagementPadding: 22px;
+proxyManagementGap: 12px;
+proxyManagementControlHeight: 42px;
+proxyManagementRowHeight: 50px;
+proxyManagementWideTable: 780px;
+proxyManagementColumnWidth: 110px;
+proxyManagementDrawerWidth: 560px;
+managementNavigationWidth: 208px;
+managementPadding: 22px;
+managementGap: 12px;
+managementControlHeight: 42px;
+managementRowHeight: 50px;
+managementAvatarSize: 32px;
+managementWideTable: 680px;
+managementColumnWidth: 140px;
+
+managementHeaderHeight: 56px;
+managementNavigationRowHeight: 48px;
+managementTableHeaderHeight: 32px;
+managementSearchHeight: 36px;
+managementSelectionHeight: 40px;
+managementTablePadding: 12px;
+managementCheckWidth: 16px;
+managementStateWidth: 94px;
+managementGroupWidth: 80px;
+managementProxyWidth: 112px;
+managementActionWidth: 28px;
+managementTitleFont: font(17px semibold);
+managementTableFont: font(12px);
+managementNameFont: font(13px semibold);
+managementTitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(semiboldTextStyle) {
+		font: managementTitleFont;
+	}
+}
+managementCaption: FlatLabel(defaultSubTextLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: managementTableFont;
+	}
+}
+managementLink: LinkButton(defaultLinkButton) {
+	font: managementTableFont;
+	overFont: managementTableFont;
+}
+managementButton: RoundButton(defaultLightButton) {
+	width: -24px;
+	style: TextStyle(defaultTextStyle) {
+		font: font(13px);
+	}
+}
+managementPrimaryButton: RoundButton(managementButton) {
+	textFg: activeButtonFg;
+	textFgOver: activeButtonFgOver;
+	textBg: activeButtonBg;
+	textBgOver: activeButtonBgOver;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: activeButtonBgRipple;
+	}
+}
+managementSearch: InputField(defaultInputField) {
+	textBg: windowBgOver;
+	textBgActive: windowBgOver;
+	textMargins: margins(34px, 9px, 12px, 8px);
+	placeholderMargins: margins(0px, 0px, 0px, 0px);
+	placeholderFont: managementTableFont;
+	placeholderFgActive: windowSubTextFg;
+	placeholderScale: 0.;
+	placeholderShift: 0px;
+	border: 0px;
+	borderActive: 0px;
+	borderRadius: 4px;
+	heightMin: 36px;
+	heightMax: 36px;
+	style: TextStyle(defaultTextStyle) {
+		font: managementTableFont;
+	}
+}
+managementBackIcon: icon {{ "title_back", windowSubTextFg }};
+managementAccountsIcon: icon {{ "menu/groups", windowSubTextFg }};
+managementProxyIcon: icon {{ "proxy_on", windowSubTextFg }};
+managementSearchIcon: icon {{ "box_search", windowSubTextFg }};
+managementTableCheck: Check(defaultCheck) {
+	diameter: 16px;
+	thickness: 1px;
+	icon: icon {{ "default_checkbox_check", overviewCheckFgActive, point(1px, 3px) }};
+}
+managementTableCheckbox: Checkbox(defaultCheckbox) {
+	width: 16px;
+	margin: margins(0px, 0px, 0px, 0px);
+	checkPosition: point(0px, 0px);
+	textPosition: point(0px, 0px);
+}
+
+protectionWideWidth: 780px;
+protectionStatusWidth: 320px;
+protectionSectionSkip: 16px;
+protectionCaptionPadding: margins(22px, 4px, 22px, 12px);
+managementProtectionIcon: icon {{ "menu/lock", windowSubTextFg }};
+
+protectionPadding: 22px;
+protectionHeaderHeight: 56px;
+protectionTitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(semiboldTextStyle) {
+		font: font(17px semibold);
+	}
+}
+protectionCaption: FlatLabel(defaultSubTextLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: font(12px);
+	}
+}
+protectionLink: LinkButton(defaultLinkButton) {
+	font: font(12px);
+	overFont: font(12px);
+}
+
+protectionDialogWidth: 480px;
+
+accountLibraryHeaderHeight: 84px;
+accountLibraryRowHeight: 58px;
+accountLibraryTableHeaderHeight: 44px;
+accountLibraryWideTable: 900px;
+accountLibraryNumberWidth: 60px;
+accountLibraryNumberSearchWidth: 88px;
+accountLibraryUsernameWidth: 140px;
+accountLibraryTagsWidth: 150px;
+accountLibraryProxyWidth: 160px;
+accountLibraryActionsWidth: 160px;
+accountLibraryFilterWidth: 126px;
+accountLibraryNumberSearch: InputField(managementSearch) {
+	textMargins: margins(12px, 9px, 12px, 8px);
+}

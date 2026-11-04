@@ -7,15 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/translate_url_provider.h"
 
+#include "lang/lang_keys.h"
+#include "mtproto/http_transport.h"
 #include "spellcheck/platform/platform_language.h"
 #include "ui/text/text_html_tags.h"
+#include "ui/toast/toast.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonParseError>
 #include <QtCore/QUrl>
-#include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 
@@ -177,8 +179,9 @@ void CollectJsonLines(
 
 class UrlTranslateProvider final : public TranslateProvider {
 public:
-	explicit UrlTranslateProvider(QString urlTemplate)
-	: _urlTemplate(std::move(urlTemplate)) {
+	UrlTranslateProvider(QString urlTemplate, MTP::NetworkContext &network)
+	: _urlTemplate(std::move(urlTemplate))
+	, _context(network) {
 	}
 
 	[[nodiscard]] bool supportsMessageId() const override {
@@ -193,6 +196,13 @@ public:
 			done(TranslateProviderResult{
 				.error = TranslateProviderError::Unknown,
 			});
+			return;
+		}
+		const auto route = _context.snapshot();
+		if (!route.httpProxy()) {
+			Toast::Show(
+				tr::lng_account_translation_blocked(tr::now));
+			done({ .error = TranslateProviderError::Unknown });
 			return;
 		}
 		auto url = _urlTemplate;
@@ -217,10 +227,12 @@ public:
 			return;
 		}
 		auto networkRequest = QNetworkRequest(requestUrl);
-		const auto reply = _network.get(networkRequest);
+		const auto network = new MTP::HttpTransport(_context);
+		network->setParent(&_requests);
+		const auto reply = network->get(networkRequest);
 		QObject::connect(reply, &QNetworkReply::finished, [=] {
 			auto result = TranslateProviderResult();
-			if (reply->error() != QNetworkReply::NoError) {
+			if (!route.current() || reply->error() != QNetworkReply::NoError) {
 				result.error = TranslateProviderError::Unknown;
 			} else {
 				const auto body = reply->readAll();
@@ -228,22 +240,24 @@ public:
 					QString::fromUtf8(body));
 				result.text = TextWithEntities{ formatted };
 			}
+			network->deleteLater();
 			done(std::move(result));
-			reply->deleteLater();
 		});
 	}
 
 private:
 	const QString _urlTemplate;
-	QNetworkAccessManager _network;
+	MTP::NetworkContext &_context;
+	QObject _requests;
 
 };
 
 } // namespace
 
 std::unique_ptr<TranslateProvider> CreateUrlTranslateProvider(
-		QString urlTemplate) {
-	return std::make_unique<UrlTranslateProvider>(std::move(urlTemplate));
+		QString urlTemplate,
+		MTP::NetworkContext &network) {
+	return std::make_unique<UrlTranslateProvider>(std::move(urlTemplate), network);
 }
 
 } // namespace Ui

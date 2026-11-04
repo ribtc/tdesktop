@@ -677,10 +677,20 @@ bool FileWriteDescriptor::finish() {
 	return encrypted;
 }
 
+bool FileExists(const QString &name, const QString &basePath) {
+	for (const auto suffix : { 's', '0', '1' }) {
+		if (QFileInfo::exists(basePath + name + suffix)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ReadFile(
 		FileReadDescriptor &result,
 		const QString &name,
-		const QString &basePath) {
+		const QString &basePath,
+		bool keepVariants) {
 	const auto base = basePath + name;
 
 	// detect order of read attempts
@@ -779,7 +789,7 @@ bool ReadFile(
 		result.stream.setDevice(&result.buffer);
 		result.stream.setVersion(QDataStream::Qt_5_1);
 
-		if ((i == 0 && !toTry[1].isEmpty()) || i == 1) {
+		if (!keepVariants && ((i == 0 && !toTry[1].isEmpty()) || i == 1)) {
 			QFile::remove(toTry[1 - i]);
 		}
 

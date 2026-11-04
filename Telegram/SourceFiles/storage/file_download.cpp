@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/file_download.h"
 
+#include "data/components/retained_messages.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
@@ -248,9 +249,12 @@ void FileLoader::localLoaded(
 }
 
 void FileLoader::start() {
+	const auto origin = fileOrigin();
+	const auto id = std::get_if<Data::FileOriginMessage>(&origin.data);
+	const auto retained = id && session().retainedMessages().isRetained(*id);
 	if (_finished || tryLoadLocal()) {
 		return;
-	} else if (_fromCloud == LoadFromLocalOnly) {
+	} else if (_fromCloud == LoadFromLocalOnly || retained) {
 		cancel();
 		return;
 	}

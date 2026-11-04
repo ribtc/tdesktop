@@ -593,6 +593,9 @@ void RestoreTheme(const Window::Theme::Object &object) {
 } // namespace
 
 QByteArray HandleExternalControl(const QString &command) {
+	if (command == u"proxies"_q || command.startsWith(u"proxy-"_q)) {
+		return Error(u"Use Account proxy settings; global proxy commands are unavailable."_q);
+	}
 	if (!IsAppLaunched()) {
 		return Error(u"application is not launched"_q);
 	} else if (!AutomationEnabled()) {

@@ -79,6 +79,7 @@ public:
 	Account(not_null<Main::Account*> owner, const QString &dataName);
 	~Account();
 
+	[[nodiscard]] bool validateLocalStorage(const MTP::AuthKeyPtr &key);
 	[[nodiscard]] StartResult legacyStart(const QByteArray &passcode);
 	[[nodiscard]] std::unique_ptr<MTP::Config> start(
 		MTP::AuthKeyPtr localKey);
@@ -264,7 +265,8 @@ private:
 
 	ReadMapResult readMapWith(
 		MTP::AuthKeyPtr localKey,
-		const QByteArray &legacyPasscode = QByteArray());
+		const QByteArray &legacyPasscode = QByteArray(),
+		bool validateOnly = false);
 	void clearLegacyFiles();
 	void writeMapDelayed();
 	void writeMapQueued();

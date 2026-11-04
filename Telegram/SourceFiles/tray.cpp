@@ -22,8 +22,8 @@ namespace Core {
 QString TrayIconToolTip() {
 	const auto counter = Core::App().unreadBadge();
 	return (counter > 0)
-		? u"%1 (%2)"_q.arg(AppName.utf16()).arg(counter)
-		: AppName.utf16();
+		? u"%1 (%2)"_q.arg(AppDisplayName.utf16()).arg(counter)
+		: AppDisplayName.utf16();
 }
 
 Tray::Tray() {

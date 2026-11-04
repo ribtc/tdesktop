@@ -23,7 +23,9 @@ HttpConnection::HttpConnection(QThread *thread, const ProxyData &proxy)
 : AbstractConnection(thread, proxy)
 , _checkNonce(base::RandomValue<MTPint128>()) {
 	_manager.moveToThread(thread);
-	_manager.setProxy(ToNetworkProxy(proxy));
+	_manager.setProxy((proxy.type == ProxyData::Type::None)
+		? QNetworkProxy(QNetworkProxy::NoProxy)
+		: ToNetworkProxy(proxy));
 }
 
 ConnectionPointer HttpConnection::clone(const ProxyData &proxy) {

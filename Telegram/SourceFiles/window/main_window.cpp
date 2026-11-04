@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "core/shortcuts.h"
 #include "core/update_channel.h"
+#include "core/version.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_forum_topic.h"
@@ -664,6 +665,9 @@ void MainWindow::updatePalette() {
 
 int MainWindow::computeMinWidth() const {
 	auto result = st::windowMinWidth;
+	if (controller().isPrimary() && controller().maybeSession()) {
+		result += st::windowAccountsWidth;
+	}
 	if (_rightColumn) {
 		result += _rightColumn->width();
 	}
@@ -932,7 +936,7 @@ void MainWindow::updateTitle() {
 		: Dialogs::Key();
 	const auto thread = key ? key.thread() : nullptr;
 	if (!thread) {
-		setTitle((user.isEmpty() ? u"Telegram"_q : user) + added + suffix);
+		setTitle((user.isEmpty() ? AppDisplayName.utf16() : user) + added + suffix);
 		return;
 	}
 	const auto history = thread->owningHistory();

@@ -891,10 +891,12 @@ void Widget::backRequested() {
 	if (_stepHistory.size() > 1) {
 		historyMove(StackAction::Back, Animate::Back);
 	} else if (back && back->sessionExists()) {
+		_account->cancelPendingLogin();
 		Core::App().setActivePrimaryWindow(getData()->controller);
 		back->domain().activate(back);
 	} else if (const auto parent
 		= Core::App().domain().maybeLastOrSomeAuthedAccount()) {
+		_account->cancelPendingLogin();
 		Core::App().domain().activate(parent);
 	} else {
 		moveToStep(

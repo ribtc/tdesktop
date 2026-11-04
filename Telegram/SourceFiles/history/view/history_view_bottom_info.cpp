@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_bottom_info.h"
 
+#include "data/components/retained_messages.h"
 #include "ui/chat/message_bubble.h"
 #include "ui/chat/chat_style.h"
 #include "ui/effects/reaction_fly_animation.h"
@@ -487,7 +488,9 @@ void BottomInfo::layoutDateText() {
 	const auto editedPrimary = !updated
 		&& (_data.flags & Data::Flag::EditedPrimary)
 		&& !(_data.flags & Data::Flag::ForwardedDate);
-	const auto edited = editedPrimary
+	const auto edited = (_data.flags & Data::Flag::Retained)
+		? (tr::lng_protection_retained_badge(tr::now) + ' ')
+		: editedPrimary
 		? QString()
 		: updated
 		? (tr::lng_ephemeral_updated(tr::now) + ' ')
@@ -663,6 +666,9 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 	const auto item = message->data();
 
 	auto result = BottomInfo::Data();
+	if (item->history()->session().retainedMessages().isRetained(item->fullId())) {
+		result.flags |= Flag::Retained;
+	}
 	result.date = message->dateTime();
 	result.effectId = item->effectId();
 	if (message->hasOutLayout()) {

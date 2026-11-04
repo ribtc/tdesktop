@@ -7,13 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_streaming.h"
 
-#include "data/data_photo.h"
+#include "data/components/retained_messages.h"
 #include "data/data_document.h"
-#include "data/data_session.h"
 #include "data/data_file_origin.h"
+#include "data/data_photo.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
+#include "media/streaming/media_streaming_document.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
-#include "media/streaming/media_streaming_document.h"
 
 namespace Data {
 namespace {
@@ -93,8 +95,10 @@ template <typename Data>
 		not_null<Data*> data,
 		FileOrigin origin,
 		bool forceRemoteLoader) {
+	const auto id = std::get_if<FileOriginMessage>(&origin.data);
+	const auto localOnly = id && _owner->session().retainedMessages().isRetained(*id);
 	const auto i = readers.find(data);
-	if (i != end(readers)) {
+	if (!localOnly && i != end(readers)) {
 		if (auto result = i->second.lock()) {
 			if (!forceRemoteLoader || result->isRemoteLoader()) {
 				return result;
@@ -108,7 +112,7 @@ template <typename Data>
 	auto result = std::make_shared<Reader>(
 		std::move(loader),
 		&_owner->cacheBigFile());
-	if (!PruneDestroyedAndSet(readers, data, result)) {
+	if (!localOnly && !PruneDestroyedAndSet(readers, data, result)) {
 		readers.emplace_or_assign(data, result);
 	}
 	return result;
@@ -124,8 +128,10 @@ template <typename Data>
 		HistoryItem *context,
 		FileOrigin origin) {
 	auto otherQualities = LookupOtherQualities(original, data, context);
+	const auto id = std::get_if<FileOriginMessage>(&origin.data);
+	const auto localOnly = id && _owner->session().retainedMessages().isRetained(*id);
 	const auto i = documents.find(data);
-	if (i != end(documents)) {
+	if (!localOnly && i != end(documents)) {
 		if (auto result = i->second.lock()) {
 			if (!otherQualities.empty()) {
 				result->setOtherQualities(std::move(otherQualities));
@@ -141,7 +147,7 @@ template <typename Data>
 		data,
 		std::move(reader),
 		std::move(otherQualities));
-	if (!PruneDestroyedAndSet(documents, data, result)) {
+	if (!localOnly && !PruneDestroyedAndSet(documents, data, result)) {
 		documents.emplace_or_assign(data, result);
 	}
 	return result;

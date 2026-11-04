@@ -1,5 +1,7 @@
 <RCC>
   <qresource prefix="/gui">
+    <file alias="langs/zh-hans.strings">../../langs/zh-hans.strings</file>
+    <file alias="langs/zh-hant.strings">../../langs/zh-hant.strings</file>
     <file alias="art/background.tgv">../../art/background.tgv</file>
     <file alias="art/bg_thumbnail.png">../../art/bg_thumbnail.png</file>
     <file alias="art/bg_initial.jpg">../../art/bg_initial.jpg</file>

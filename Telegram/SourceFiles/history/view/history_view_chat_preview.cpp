@@ -63,7 +63,10 @@ class Item final
 	, private ListDelegate
 	, private CornerButtonsDelegate {
 public:
-	Item(not_null<Ui::Menu::Menu*> parent, not_null<Data::Thread*> thread);
+	Item(
+		not_null<Ui::Menu::Menu*> parent,
+		not_null<Data::Thread*> thread,
+		bool unreadPreview);
 
 	[[nodiscard]] not_null<QAction*> action() const override;
 	[[nodiscard]] bool isEnabled() const override;
@@ -211,6 +214,7 @@ private:
 	rpl::event_stream<ChatPreviewAction> _actions;
 
 	QImage _bg;
+	bool _unreadPreview = false;
 
 };
 
@@ -282,7 +286,10 @@ struct StatusFields {
 	});
 }
 
-Item::Item(not_null<Ui::Menu::Menu*> parent, not_null<Data::Thread*> thread)
+Item::Item(
+		not_null<Ui::Menu::Menu*> parent,
+		not_null<Data::Thread*> thread,
+		bool unreadPreview)
 : Ui::Menu::ItemBase(parent, st::previewMenu.menu)
 , _dummyAction(new QAction(parent))
 , _session(&thread->session())
@@ -312,6 +319,7 @@ Item::Item(not_null<Ui::Menu::Menu*> parent, not_null<Data::Thread*> thread)
 	setPointerCursor(false);
 	setMinWidth(st::previewMenu.menu.widthMin);
 	resize(minWidth(), contentHeight());
+	_unreadPreview = unreadPreview;
 	setupTop();
 	setupMarkRead();
 	setupBackground();
@@ -333,7 +341,9 @@ int Item::contentHeight() const {
 void Item::setupTop() {
 	_top->setGeometry(0, 0, width(), st::previewTop.height);
 	_top->setClickedCallback([=] {
-		_actions.fire({ .openInfo = true });
+		_actions.fire(_unreadPreview
+			? ChatPreviewAction{ .cancel = true }
+			: ChatPreviewAction{ .openInfo = true });
 	});
 	_top->paintRequest() | rpl::on_next([=](QRect clip) {
 		auto p = QPainter(_top.get());
@@ -360,11 +370,13 @@ void Item::setupTop() {
 	) | rpl::map([](StatusFields &&fields) {
 		return fields.text;
 	});
-	const auto status = _thread->peer()->isSelf()
+	const auto status = _thread->peer()->isSelf() && !_unreadPreview
 		? nullptr
 		: Ui::CreateChild<Ui::FlatLabel>(
 			_top.get(),
-			(topic
+			(_unreadPreview
+				? tr::lng_protection_preview_status()
+				: topic
 				? Info::Profile::NameValue(topic->peer())
 				: std::move(statusText)),
 			st::previewStatus);
@@ -372,7 +384,7 @@ void Item::setupTop() {
 		std::move(
 			statusFields
 		) | rpl::on_next([=](const StatusFields &fields) {
-			status->setTextColorOverride(fields.active
+			status->setTextColorOverride(_unreadPreview || fields.active
 				? st::windowActiveTextFg->c
 				: std::optional<QColor>());
 		}, status->lifetime());
@@ -462,6 +474,14 @@ void Item::setupMarkRead() {
 			? (!unread)
 			: (_thread->peer()->isForum()
 				|| _thread->peer()->amMonoforumAdmin());
+		if (_unreadPreview) {
+			_markRead->setText(tr::lng_protection_preview_open(tr::now));
+			_markRead->setClickedCallback([=] {
+				_actions.fire({ .openChat = true });
+			});
+			_markRead->show();
+			return;
+		}
 		if (hidden) {
 			_markRead->hide();
 			return;
@@ -538,7 +558,7 @@ void Item::setupHistory() {
 	}, lifetime());
 
 	_scroll->events() | rpl::on_next([=](not_null<QEvent*> e) {
-		if (e->type() == QEvent::MouseButtonDblClick) {
+		if (!_unreadPreview && e->type() == QEvent::MouseButtonDblClick) {
 			const auto button = static_cast<QMouseEvent*>(e.get())->button();
 			if (button == Qt::LeftButton) {
 				const auto relative = Ui::MapFrom(
@@ -1002,7 +1022,8 @@ bool Item::cornerButtonsHas(CornerButtonType type) {
 
 ChatPreview MakeChatPreview(
 		QWidget *parent,
-		not_null<Dialogs::Entry*> entry) {
+		not_null<Dialogs::Entry*> entry,
+		bool unreadPreview) {
 	const auto thread = entry->asThread();
 	if (!thread) {
 		return {};
@@ -1015,7 +1036,7 @@ ChatPreview MakeChatPreview(
 	};
 	const auto menu = result.menu.get();
 
-	auto action = base::make_unique_q<Item>(menu->menu(), thread);
+	auto action = base::make_unique_q<Item>(menu->menu(), thread, unreadPreview);
 	result.actions = action->actions();
 	menu->addAction(std::move(action));
 	if (const auto topic = thread->asTopic()) {

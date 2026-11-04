@@ -49,6 +49,7 @@ ConnectionPointer ResolvingConnection::clone(const ProxyData &proxy) {
 
 void ResolvingConnection::setChild(ConnectionPointer &&child) {
 	_child = std::move(child);
+	_child->setParent(this);
 	connect(
 		_child,
 		&AbstractConnection::receivedData,

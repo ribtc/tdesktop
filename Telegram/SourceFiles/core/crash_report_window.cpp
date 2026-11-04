@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/crash_report_window.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "core/crash_reports.h"
 #include "core/application.h"
 #include "core/sandbox.h"
@@ -40,7 +42,7 @@ PreLaunchWindow::PreLaunchWindow(QString title) {
 	setWindowIcon(Window::CreateIcon());
 	setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
 
-	setWindowTitle(title.isEmpty() ? u"Telegram"_q : title);
+	setWindowTitle(title.isEmpty() ? AppDisplayName.utf16() : title);
 
 	QPalette p(palette());
 	p.setColor(QPalette::Window, QColor(255, 255, 255));
@@ -241,11 +243,13 @@ void PreLaunchCheckbox::setText(const QString &text) {
 	resize(sizeHint());
 }
 
-NotStartedWindow::NotStartedWindow()
+NotStartedWindow::NotStartedWindow(const QString &error)
 : _label(this)
 , _log(this)
 , _close(this) {
-	_label.setText(u"Could not start Telegram Desktop!\nYou can see complete log below:"_q);
+	_label.setText(error.isEmpty()
+		? u"Could not start Telegram Desktop!\nYou can see complete log below:"_q
+		: error);
 
 	_log.setPlainText(Logs::full());
 
@@ -569,6 +573,13 @@ void LastCrashedWindow::addReportFieldPart(const QLatin1String &name, const QLat
 }
 
 void LastCrashedWindow::sendReport() {
+	if (!Core::AccountSystemNetworkError().isEmpty()) {
+		_pleaseSendReport.setText(
+			Lang::EarlyValue(tr::lng_account_crash_blocked.base));
+		_sendingState = SendingFail;
+		updateControls();
+		return;
+	}
 	if (_checkReply) {
 		_checkReply->deleteLater();
 		_checkReply = nullptr;

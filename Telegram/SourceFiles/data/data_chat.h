@@ -102,7 +102,7 @@ public:
 		not_null<UserData*> user);
 
 	// Like in ChannelData.
-	[[nodiscard]] bool allowsForwarding() const;
+	[[nodiscard]] bool hasProtectedContent() const;
 	[[nodiscard]] bool canEditInformation() const;
 	[[nodiscard]] bool canEditPermissions() const;
 	[[nodiscard]] bool canEditUsername() const;

@@ -47,6 +47,7 @@ class LocationPickers;
 class Credits;
 class PromoSuggestions;
 class Passkeys;
+class RetainedMessages;
 } // namespace Data
 
 namespace Settings {
@@ -95,6 +96,7 @@ class Account;
 class AppConfig;
 class Domain;
 class SessionSettings;
+class Protection;
 class SendAsPeers;
 
 struct FreezeInfo {
@@ -250,6 +252,14 @@ public:
 		return *_cachedReactionIconFactory;
 	}
 
+	[[nodiscard]] Protection &protection() const {
+		return *_protection;
+	}
+
+	[[nodiscard]] Data::RetainedMessages &retainedMessages() const {
+		return *_retainedMessages;
+	}
+
 	void saveSettings();
 	void saveSettingsDelayed(crl::time delay = kDefaultSaveDelay);
 	void saveSettingsNowIfNeeded();
@@ -333,6 +343,8 @@ private:
 	// _data depends on _downloader / _uploader.
 	const std::unique_ptr<Data::Session> _data;
 	const not_null<UserData*> _user;
+	const std::unique_ptr<Protection> _protection;
+	const std::unique_ptr<Data::RetainedMessages> _retainedMessages;
 
 	// _emojiStickersPack depends on _data.
 	const std::unique_ptr<Stickers::EmojiPack> _emojiStickersPack;

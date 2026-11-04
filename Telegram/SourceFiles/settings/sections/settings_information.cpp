@@ -804,8 +804,7 @@ void SetupAccountsWrap(
 		QWidget *parent,
 		not_null<Window::SessionController*> window,
 		not_null<::Main::Account*> account,
-		Fn<void(Qt::KeyboardModifiers)> callback,
-		bool locked) {
+		Fn<void(Qt::KeyboardModifiers)> callback) {
 	const auto active = (account == &window->session().account());
 	const auto session = &account->session();
 	const auto user = session->user();
@@ -908,17 +907,15 @@ void SetupAccountsWrap(
 				Info::Profile::PhoneValue(session->user()));
 		}, &st::menuIconCopy);
 
-		if (!locked) {
-			if (!isActive) {
-				addAction(tr::lng_menu_activate(tr::now), [=] {
-					callback({});
-				}, &st::menuIconProfile);
-			}
-			MarkAsReadMenu::AddAllChatsAction(
-				session,
-				window->uiShow(),
-				addAction);
+		if (!isActive) {
+			addAction(tr::lng_menu_activate(tr::now), [=] {
+				callback({});
+			}, &st::menuIconProfile);
 		}
+		MarkAsReadMenu::AddAllChatsAction(
+			session,
+			window->uiShow(),
+			addAction);
 
 		if (!isActive) {
 			auto logoutCallback = [=] {
@@ -997,16 +994,7 @@ void AccountsList::setup() {
 		}
 		rebuild();
 	}, _outer->lifetime());
-
-	Core::App().domain().maxAccountsChanges(
-	) | rpl::on_next([=] {
-		for (auto i = _watched.begin(); i != _watched.end(); i++) {
-			i->second = nullptr;
-		}
-		rebuild();
-	}, _outer->lifetime());
 }
-
 
 not_null<Ui::SlideWrap<Ui::SettingsButton>*> AccountsList::setupAdd() {
 	const auto result = _outer->add(
@@ -1028,18 +1016,7 @@ not_null<Ui::SlideWrap<Ui::SettingsButton>*> AccountsList::setupAdd() {
 		auto &domain = _controller->session().domain();
 		domain.removeRedundantAccounts();
 
-		auto found = false;
-		for (const auto &[index, account] : domain.accounts()) {
-			const auto raw = account.get();
-			if (!raw->sessionExists()
-				&& raw->mtp().environment() == environment) {
-				found = true;
-			}
-		}
-		if (!found && domain.accounts().size() >= domain.maxAccounts()) {
-			_controller->show(
-				Box(AccountsLimitBox, &_controller->session()));
-		} else if (newWindow) {
+		if (newWindow) {
 			domain.addActivated(environment, true);
 		} else {
 			_controller->window().preventOrInvoke([=] {
@@ -1111,7 +1088,6 @@ void AccountsList::rebuild() {
 		}
 	}, inner->lifetime());
 
-	const auto premiumLimit = _controller->session().domain().maxAccounts();
 	const auto list = _controller->session().domain().orderedAccounts();
 	for (const auto &account : list) {
 		auto i = _watched.find(account);
@@ -1121,7 +1097,6 @@ void AccountsList::rebuild() {
 		if (!account->sessionExists() || list.size() == 1) {
 			button = nullptr;
 		} else if (!button) {
-			const auto nextIsLocked = (inner->count() >= premiumLimit);
 			auto callback = [=](Qt::KeyboardModifiers modifiers) {
 				if (_reordering) {
 					return;
@@ -1156,22 +1131,12 @@ void AccountsList::rebuild() {
 				inner,
 				_controller,
 				account,
-				std::move(callback),
-				nextIsLocked)));
+				std::move(callback))));
 		}
 	}
 	inner->resizeToWidth(_outer->width());
 
-	const auto count = int(list.size());
-
-	_reorder->addPinnedInterval(
-		premiumLimit,
-		std::max(1, count - premiumLimit));
-
-	_addAccount->toggle(
-		(count < ::Main::Domain::kPremiumMaxAccounts),
-		anim::type::instant);
-
+	_addAccount->toggle(true, anim::type::instant);
 	_reorder->start();
 }
 

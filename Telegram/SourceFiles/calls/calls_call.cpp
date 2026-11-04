@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "calls/group/calls_group_common.h"
 #include "calls/calls_instance.h"
+#include "calls/calls_network.h"
 #include "calls/calls_panel.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -21,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "lang/lang_keys.h"
+#include "main/main_account.h"
 #include "main/main_app_config.h"
 #include "main/main_session.h"
 #include "media/audio/media_audio_track.h"
@@ -228,6 +230,7 @@ Call::Call(
 : _delegate(delegate)
 , _user(user)
 , _api(&_user->session().mtp())
+, _network(_user->session().account().network().snapshot())
 , _type(type)
 , _discardByTimeoutTimer([=] { hangup(); })
 , _playbackDeviceId(
@@ -261,6 +264,7 @@ Call::Call(
 	}
 	setupMediaDevices();
 	setupOutgoingVideo();
+	watchNetwork();
 }
 
 Call::Call(
@@ -273,6 +277,7 @@ Call::Call(
 : _delegate(delegate)
 , _user(user)
 , _api(&_user->session().mtp())
+, _network(_user->session().account().network().snapshot())
 , _type(Type::Incoming)
 , _state(State::WaitingIncoming)
 , _discardByTimeoutTimer([=] { hangup(); })
@@ -304,6 +309,19 @@ Call::Call(
 		StartVideoState(video))) {
 	startWaitingTrack();
 	setupOutgoingVideo();
+	watchNetwork();
+}
+
+void Call::watchNetwork() {
+	_user->session().account().network().changes(
+	) | rpl::on_next([=] {
+		if (!_network.current()
+			&& state() != State::Failed
+			&& !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+			_discardByTimeoutTimer.cancel();
+			setState(State::Failed);
+		}
+	}, _lifetime);
 }
 
 void Call::generateModExpFirst(bytes::const_span randomSeed) {
@@ -361,6 +379,11 @@ void Call::startOutgoing() {
 	Expects(_state.current() == State::Requesting);
 	Expects(_gaHash.size() == kSha256Size);
 	Expects(!conferenceInvite());
+
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		finish(FinishType::Failed);
+		return;
+	}
 
 	const auto flags = _videoCapture
 		? MTPphone_RequestCall::Flag::f_video
@@ -436,6 +459,9 @@ void Call::applyUserConfirmation() {
 }
 
 void Call::answer() {
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	const auto video = isSharingVideo();
 	_delegate->callRequestPermissionsOrFail(crl::guard(this, [=] {
 		actuallyAnswer();
@@ -481,6 +507,10 @@ void Call::acceptConferenceInvite() {
 
 void Call::actuallyAnswer() {
 	Expects(_type == Type::Incoming);
+
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 
 	if (conferenceInvite()) {
 		acceptConferenceInvite();
@@ -1098,6 +1128,11 @@ void Call::startConfirmedCall(const MTPDphoneCall &call) {
 void Call::createAndStartController(const MTPDphoneCall &call) {
 	Expects(!conferenceInvite());
 
+	if (!CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		finish(FinishType::Failed);
+		return;
+	}
+
 	_discardByTimeoutTimer.cancel();
 	if (!checkCallFields(call) || _authKey.size() != kAuthKeySize) {
 		return;
@@ -1238,21 +1273,6 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		AppendServer(descriptor.rtcServers, connection, ids);
 	}
 
-	{
-		const auto &settingsProxy = Core::App().settings().proxy();
-		using ProxyData = MTP::ProxyData;
-		if (settingsProxy.useProxyForCalls() && settingsProxy.isEnabled()) {
-			const auto &selected = settingsProxy.selected();
-			if (selected.supportsCalls() && !selected.host.isEmpty()) {
-				Assert(selected.type == ProxyData::Type::Socks5);
-				descriptor.proxy = std::make_unique<tgcalls::Proxy>();
-				descriptor.proxy->host = selected.host.toStdString();
-				descriptor.proxy->port = selected.port;
-				descriptor.proxy->login = selected.user.toStdString();
-				descriptor.proxy->password = selected.password.toStdString();
-			}
-		}
-	}
 	_instance = tgcalls::Meta::Create(versionString, std::move(descriptor));
 	if (!_instance) {
 		LOG(("Call Error: Wrong library version: %1."
@@ -1471,6 +1491,9 @@ QString Call::screenSharingDeviceId() const {
 }
 
 void Call::toggleCameraSharing(bool enabled) {
+	if (enabled && !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	if (isSharingCamera() == enabled) {
 		return;
 	} else if (!enabled) {
@@ -1499,6 +1522,9 @@ void Call::toggleCameraSharing(bool enabled) {
 void Call::toggleScreenSharing(
 		std::optional<QString> uniqueId,
 		bool withAudio) {
+	if (uniqueId && !CheckMediaAllowed(_network, MediaTransport::Rtc)) {
+		return;
+	}
 	if (!uniqueId) {
 		if (isSharingScreen()) {
 			if (_videoCapture) {

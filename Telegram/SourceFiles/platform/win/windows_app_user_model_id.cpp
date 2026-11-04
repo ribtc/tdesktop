@@ -345,9 +345,13 @@ bool checkInstalled(QString path = {}) {
 		}
 	}
 
+	const auto branded = u"TelegramUltra/TelegramUltra.lnk"_q;
+	const auto upgraded = u"Telegram Desktop/TelegramUltra.lnk"_q;
 	const auto installed = u"Telegram Desktop/Telegram.lnk"_q;
 	const auto old = u"Telegram Win (Unofficial)/Telegram.lnk"_q;
-	return validateShortcutAt(path + installed)
+	return validateShortcutAt(path + branded)
+		|| validateShortcutAt(path + upgraded)
+		|| validateShortcutAt(path + installed)
 		|| validateShortcutAt(path + old);
 }
 

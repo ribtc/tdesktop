@@ -2766,7 +2766,9 @@ int SessionController::minimalThreeColumnWidth() const {
 auto SessionController::computeColumnLayout() const -> ColumnLayout {
 	auto layout = Adaptive::WindowLayout::OneColumn;
 
-	auto bodyWidth = widget()->bodyWidget()->width() - filtersWidth();
+	auto bodyWidth = widget()->bodyWidget()->width()
+		- widget()->accountsRailWidth()
+		- filtersWidth();
 	auto dialogsWidth = 0, chatWidth = 0, thirdWidth = 0;
 
 	auto useOneColumnLayout = [&] {
@@ -3302,6 +3304,7 @@ void SessionController::showPeerHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId msgId) {
+	widget()->closeAccountManagement();
 	if (const auto peer = session().data().peerLoaded(peerId)) {
 		if (const auto channel = peer->asChannel()) {
 			if (channel->isCommunity()) {
@@ -3463,6 +3466,7 @@ FilterId SessionController::activeChatsFilterCurrent() const {
 void SessionController::setActiveChatsFilter(
 		FilterId id,
 		const SectionShow &params) {
+	widget()->closeAccountManagement();
 	if (!isPrimary()) {
 		return;
 	}
@@ -4132,12 +4136,14 @@ bool SessionController::showChatPreview(
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback,
 		QPointer<QWidget> parentOverride,
-		std::optional<QPoint> positionOverride) {
+		std::optional<QPoint> positionOverride,
+		bool unreadPreview) {
 	return _chatPreviewManager->show(
 		std::move(row),
 		std::move(callback),
 		std::move(parentOverride),
-		positionOverride);
+		positionOverride,
+		unreadPreview);
 }
 
 bool SessionController::scheduleChatPreview(

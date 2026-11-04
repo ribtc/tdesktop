@@ -772,8 +772,8 @@ bool ChannelData::canAddAdmins() const {
 	return amCreator() || (adminRights() & AdminRight::AddAdmins);
 }
 
-bool ChannelData::allowsForwarding() const {
-	return !(flags() & Flag::NoForwards);
+bool ChannelData::hasProtectedContent() const {
+	return (flags() & Flag::NoForwards);
 }
 
 bool ChannelData::canViewMembers() const {

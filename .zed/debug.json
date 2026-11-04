@@ -1,0 +1,35 @@
+[
+  {
+    "label": "Telegram Debug — 构建并调试",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "build": {
+      "command": "/usr/bin/python3",
+      "args": [
+        "Telegram/build/debug_build.py"
+      ],
+      "cwd": "$ZED_WORKTREE_ROOT"
+    },
+    "program": "$ZED_WORKTREE_ROOT/out/Debug/Telegram.app/Contents/MacOS/Telegram",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "args": [
+      "-debug",
+      "-noupdate",
+      "-workdir",
+      "$ZED_WORKTREE_ROOT/out/zed-profile"
+    ]
+  },
+  {
+    "label": "Telegram Debug — 直接调试",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/out/Debug/Telegram.app/Contents/MacOS/Telegram",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "args": [
+      "-debug",
+      "-noupdate",
+      "-workdir",
+      "$ZED_WORKTREE_ROOT/out/zed-profile"
+    ]
+  }
+]

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/ui/payments_panel.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "payments/ui/payments_form_summary.h"
 #include "payments/ui/payments_edit_information.h"
 #include "payments/ui/payments_edit_card.h"
@@ -247,7 +249,9 @@ void Panel::showForm(
 		&& method.savedMethods.empty()
 		&& !method.native.supported) {
 		const auto available = Webview::Availability();
-		if (available.error != Webview::Available::Error::None) {
+		if (!Core::AccountWebViewError().isEmpty()) {
+			showCriticalError({ Core::AccountWebViewError() });
+		} else if (available.error != Webview::Available::Error::None) {
 			showWebviewError(
 				tr::lng_payments_webview_no_use(tr::now),
 				available);
@@ -451,7 +455,9 @@ void Panel::showEditCardByUrl(
 			WebviewMode::PaymentMethod,
 			std::move(bottomText))) {
 		const auto available = Webview::Availability();
-		if (available.error != Webview::Available::Error::None) {
+		if (!Core::AccountWebViewError().isEmpty()) {
+			showCriticalError({ Core::AccountWebViewError() });
+		} else if (available.error != Webview::Available::Error::None) {
 			showWebviewError(
 				tr::lng_payments_webview_no_use(tr::now),
 				available);
@@ -534,6 +540,10 @@ bool Panel::showWebview(
 }
 
 bool Panel::createWebview(const Webview::ThemeParams &params) {
+	if (!Core::AccountWebViewError().isEmpty()) {
+		return false;
+	}
+
 	auto outer = base::make_unique_q<RpWidget>(_widget.get());
 	const auto container = outer.get();
 	_widget->showInner(std::move(outer));

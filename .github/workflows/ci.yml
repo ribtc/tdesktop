@@ -1,0 +1,658 @@
+name: Release CI
+
+on:
+  push:
+    tags:
+      - 'v*-telegram-ultra.*'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - macos
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  build-macos:
+    name: macOS arm64 Release
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
+    runs-on: macos-26
+    timeout-minutes: 360
+
+    env:
+      GIT: "https://github.com"
+      CMAKE_GENERATOR: "Ninja"
+      CMAKE_BUILD_TYPE: "Release"
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+      CMAKE_PREFIX_PATH: "/opt/homebrew/opt/ffmpeg@6:/opt/homebrew/opt/openal-soft"
+      TDE2E: "51743dfd01dff6179e2d8f7095729caa4e2222e9"
+      TLOTTIE: "92df98dc209bc39b1e567ec74a8c86a0af5239de"
+      WALLET_ENGINE: "e59e0d89d7ee90c388bf36e3334c5b276f396697"
+      RUST_PATCHES: "aec474953ff7ee9b6e4cd9b8658288ea86d124f3"
+      RUST_TOOLCHAIN: "1.96.1"
+      MANUAL_CACHING: "1"
+
+    steps:
+      - name: Check production credentials.
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          test -n "$API_ID"
+          test -n "$API_HASH"
+          test "$API_ID" != "17349"
+          test "$(uname -m)" = "arm64"
+
+      - name: Get repository name.
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.REPO_NAME }}
+          ref: ${{ github.sha }}
+
+      - name: Record source commit.
+        run: echo "SOURCE_COMMIT=$(git -C "$REPO_NAME" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: First set up.
+        run: |
+          libs="ada-url ffmpeg@6 jpeg-xl libavif libheif minizip openal-soft openh264 openssl opus qtbase qtimageformats qtshadertools qtsvg xz"
+          brew update
+          brew install autoconf automake boost cmake libtool ninja pkg-config python $libs
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+          xcodebuild -version > CACHE_KEY.txt
+          brew list --versions $libs >> CACHE_KEY.txt
+          echo $MANUAL_CACHING >> CACHE_KEY.txt
+          echo "$GITHUB_WORKSPACE" >> CACHE_KEY.txt
+          echo "CACHE_KEY=`md5 -q CACHE_KEY.txt`" >> $GITHUB_ENV
+
+          echo "MACOSX_DEPLOYMENT_TARGET=$(grep 'set(QT_SUPPORTED_MIN_MACOS_VERSION' /opt/homebrew/Cellar/qtbase/*/lib/cmake/Qt6/Qt6ConfigExtras.cmake | sed -E 's/^.*"(.*)"\)$/\1/')" >> $GITHUB_ENV
+          echo "LibrariesPath=`pwd`" >> $GITHUB_ENV
+
+          echo "RNNOISE=`curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/xiph/rnnoise/git/refs/heads/master | jq -r .object.sha`" >> $GITHUB_ENV
+          echo "WEBRTC=`curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/desktop-app/tg_owt/git/refs/heads/master | jq -r .object.sha`" >> $GITHUB_ENV
+
+      - name: Rust libraries cache.
+        id: cache-tdesktop-rust
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tdesktop_rust
+          key: ${{ runner.OS }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_PATCHES }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
+      - name: Rust libraries.
+        if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
+        run: |
+          cd "$LibrariesPath"
+          export RUSTUP_HOME="$LibrariesPath/rustup"
+          export CARGO_HOME="$LibrariesPath/cargo"
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+          sh rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN"
+          export RUSTUP_TOOLCHAIN="$RUST_TOOLCHAIN"
+          export PATH="$CARGO_HOME/bin:$PATH"
+
+          git init rust-patches
+          cd rust-patches
+          git remote add origin "$GIT/desktop-app/patches.git"
+          git fetch --depth=1 origin "$RUST_PATCHES"
+          git reset --hard FETCH_HEAD
+          cd "$LibrariesPath"
+
+          git init tlottie
+          cd tlottie
+          git remote add origin "$GIT/dkaraush/tlottie.git"
+          git fetch --depth=1 origin "$TLOTTIE"
+          git reset --hard FETCH_HEAD
+          cd "$LibrariesPath"
+
+          export GIT_LFS_SKIP_SMUDGE=1
+          git init wallet-engine
+          cd wallet-engine
+          git remote add origin "$GIT/i582/wallet-engine.git"
+          git fetch --depth=1 origin "$WALLET_ENGINE"
+          git reset --hard FETCH_HEAD
+          git apply ../rust-patches/wallet-engine.patch
+          cd "$LibrariesPath"
+
+          cargo new --lib --vcs none tdesktop_rust
+          cd tdesktop_rust
+          printf 'pub use ::tlottie;\npub use ::wallet_engine;\n' > src/lib.rs
+          cargo add --path ../tlottie --features c-api
+          cargo add --path ../wallet-engine
+          cargo rustc --lib --release \
+            --crate-type staticlib --crate-type cdylib \
+            --config "profile.release.opt-level='z'" \
+            --config "profile.release.lto='thin'" \
+            --config "profile.release.codegen-units=1" \
+            --config "profile.release.panic='unwind'" \
+            --config "profile.release.package.tlottie.opt-level=3" \
+            -- --print native-static-libs
+          install -d "$LibrariesPath/local/tdesktop_rust/lib" "$LibrariesPath/local/tdesktop_rust/include/tlottie" "$LibrariesPath/local/tdesktop_rust/include/wallet_engine"
+          install -m 644 target/release/libtdesktop_rust.a "$LibrariesPath/local/tdesktop_rust/lib/libtdesktop_rust.a"
+          install -m 644 ../tlottie/include/tlottie.h "$LibrariesPath/local/tdesktop_rust/include/tlottie/tlottie.h"
+          cargo run --manifest-path ../wallet-engine/bindgen/cpp/bindgen/Cargo.toml --locked -- \
+            --library --out-dir "$LibrariesPath/local/tdesktop_rust/include/wallet_engine" \
+            target/release/libtdesktop_rust.dylib
+
+      - name: Save tdesktop-rust cache.
+        if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tdesktop_rust
+          key: ${{ steps.cache-tdesktop-rust.outputs.cache-primary-key }}
+
+      - name: RNNoise cache.
+        id: cache-rnnoise
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/rnnoise
+          key: ${{ runner.OS }}-rnnoise-${{ env.RNNOISE }}-${{ env.CACHE_KEY }}
+      - name: RNNoise.
+        if: steps.cache-rnnoise.outputs.cache-hit != 'true'
+        run: |
+          cd $LibrariesPath
+
+          git clone --depth=1 $GIT/xiph/rnnoise.git
+          cd rnnoise
+          ./autogen.sh
+          ./configure --prefix=$LibrariesPath/local/rnnoise --disable-examples --disable-doc
+          make -j$(sysctl -n hw.logicalcpu)
+          make install
+
+      - name: Save rnnoise cache.
+        if: steps.cache-rnnoise.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/rnnoise
+          key: ${{ steps.cache-rnnoise.outputs.cache-primary-key }}
+
+      - name: WebRTC cache.
+        id: cache-webrtc
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tg_owt
+          key: ${{ runner.OS }}-webrtc-${{ env.WEBRTC }}-${{ env.CACHE_KEY }}
+      - name: WebRTC.
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        run: |
+          cd $LibrariesPath
+
+          git clone --depth=1 --recursive --shallow-submodules $GIT/desktop-app/tg_owt.git
+          cd tg_owt
+
+          cmake -Bbuild . -DCMAKE_INSTALL_PREFIX=$LibrariesPath/local/tg_owt
+          cmake --build build
+          cmake --install build
+
+      - name: Save webrtc cache.
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tg_owt
+          key: ${{ steps.cache-webrtc.outputs.cache-primary-key }}
+
+      - name: TDE2E cache.
+        id: cache-tde2e
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tde2e
+          key: ${{ runner.OS }}-tde2e-${{ env.TDE2E }}-${{ env.CACHE_KEY }}
+      - name: TDE2E.
+        if: steps.cache-tde2e.outputs.cache-hit != 'true'
+        run: |
+          cd $LibrariesPath
+
+          git init tde2e
+          cd tde2e
+          git remote add origin $GIT/tdlib/td.git
+          git fetch --depth=1 origin $TDE2E
+          git reset --hard FETCH_HEAD
+
+          cmake -Bbuild . -DCMAKE_INSTALL_PREFIX=$LibrariesPath/local/tde2e -DTD_E2E_ONLY=ON
+          cmake --build build
+          cmake --install build
+
+      - name: Save tde2e cache.
+        if: steps.cache-tde2e.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tde2e
+          key: ${{ steps.cache-tde2e.outputs.cache-primary-key }}
+
+      - name: Build Release.
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          cd "$REPO_NAME"
+          export CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH$(find "$LibrariesPath/local" -mindepth 1 -maxdepth 1 -type d -exec printf ':%s' {} +)"
+          cmake -B build . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDESKTOP_APP_USE_PACKAGED=ON \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DTDESKTOP_API_TEST=OFF \
+            -DTDESKTOP_API_ID="$API_ID" \
+            -DTDESKTOP_API_HASH="$API_HASH" \
+            -DDESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build build --target Telegram
+
+      - name: Bundle, sign and verify.
+        run: |
+          cd "$REPO_NAME"
+          macdeployqt build/Telegram.app -always-overwrite
+          mkdir -p "$RUNNER_TEMP/release-package"
+          app="$RUNNER_TEMP/release-package/TelegramUltra.app"
+          ditto build/Telegram.app "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/Telegram")" = "arm64"
+          strip -S -x "$app/Contents/MacOS/Telegram"
+          codesign --force --deep --sign - \
+            --entitlements Telegram/Telegram/Telegram.entitlements "$app"
+          codesign --verify --deep --strict "$app"
+          mkdir -p "$GITHUB_WORKSPACE/release"
+          archive="$GITHUB_WORKSPACE/release/TelegramUltra-macOS-arm64-Release.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          unzip -tq "$archive"
+          cd "$GITHUB_WORKSPACE/release"
+          shasum -a 256 TelegramUltra-macOS-arm64-Release.zip > SHA256SUMS.txt
+          python3 - <<'PYINFO'
+          import json, os
+          from pathlib import Path
+          Path('build-info.json').write_text(json.dumps({
+              'commit': os.environ['SOURCE_COMMIT'],
+              'workflow_commit': os.environ['GITHUB_SHA'],
+              'tag': os.environ['RELEASE_TAG'],
+              'configuration': 'Release',
+              'architecture': 'arm64',
+              'signing': 'ad-hoc',
+              'run': 'https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID'],
+          }, indent=2) + '\n')
+          PYINFO
+
+      - name: Upload package.
+        uses: actions/upload-artifact@v7
+        with:
+          name: TelegramUltra-macOS-arm64-Release
+          path: release/
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows:
+    name: Windows x64 Release
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    env:
+      PREPARE_PATH: Telegram/build/prepare/prepare.py
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check production credentials.
+        shell: pwsh
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          if (-not $env:API_ID -or -not $env:API_HASH -or $env:API_ID -eq '17349') {
+            throw 'Production API credentials are required.'
+          }
+
+      - name: Prepare directories.
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+
+      - name: Get repository name.
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Git auth through the TBuild symlink.
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          BASIC=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          echo "::add-mask::$BASIC"
+          echo "GIT_AUTH_HEADER=AUTHORIZATION: basic $BASIC" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0: ${{ env.GIT_AUTH_HEADER }}
+        with:
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+          ref: ${{ github.sha }}
+
+      - name: Submodules.
+        shell: bash
+        run: |
+          cd $TBUILD/$REPO_NAME
+          git submodule update --init --depth=1
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: First set up.
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          sha256sum "$TBUILD/$REPO_NAME/Telegram/build/qt_version.py" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+
+          echo "Configurate git for cherry-picks."
+          git config --global user.email "you@example.com"
+          git config --global user.name "Sample"
+
+      - name: Visual Studio ATL component.
+        shell: pwsh
+        run: |
+          $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+          $vswhere = Join-Path $installer 'vswhere.exe'
+          $setup = Join-Path $installer 'setup.exe'
+          if (-not (Test-Path $vswhere) -or -not (Test-Path $setup)) {
+            throw "Visual Studio Installer is incomplete at $installer."
+          }
+
+          $toolsComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64'
+          $atlComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL'
+          $path = @(& $vswhere -latest -products '*' -requires $toolsComponent -property installationPath)[0]
+          if (-not $path) {
+            throw "No Visual Studio instance provides $toolsComponent."
+          }
+
+          $toolset = Get-ChildItem (Join-Path $path 'VC\Tools\MSVC') -Directory `
+            | Where-Object { $_.Name -like '14.44.*' } `
+            | Sort-Object Name -Descending `
+            | Select-Object -First 1
+          if (-not $toolset) {
+            throw "The selected Visual Studio instance has no 14.44 toolset."
+          }
+          $header = Join-Path $toolset.FullName 'atlmfc\include\atlbase.h'
+          if (Test-Path $header) {
+            Write-Host "ATL is already installed for $($toolset.Name)."
+            exit 0
+          }
+
+          $process = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            'modify',
+            '--installPath', "`"$path`"",
+            '--add', $atlComponent,
+            '--quiet', '--norestart', '--nocache'
+          )
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Visual Studio Installer exited with $($process.ExitCode)."
+          }
+          if (-not (Test-Path $header)) {
+            throw "$atlComponent completed without installing $header."
+          }
+
+      - uses: Eden-CI/msvc-dev-cmd@1bd71f95d6f3d1b2b3395b335cc63bcdc90cf223
+        name: Native Tools Command Prompt.
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: '14.44'
+
+      - name: Verify Visual Studio ATL component.
+        shell: pwsh
+        run: |
+          $atlInclude = Join-Path $env:VCToolsInstallDir 'atlmfc\include'
+          $header = Join-Path $atlInclude 'atlbase.h'
+          if (-not (Test-Path $header)) {
+            throw "The selected toolset has no ATL header at $header."
+          }
+          if (($env:INCLUDE -split ';') -notcontains $atlInclude) {
+            throw "The selected toolset did not add $atlInclude to INCLUDE."
+          }
+
+      - name: Check Qt dependency configuration.
+        shell: pwsh
+        run: |
+          python "$env:TBUILD/$env:REPO_NAME/Telegram/build/test_qt_dependency_paths.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python "$env:TBUILD/$env:REPO_NAME/Telegram/build/test_prepare_qt.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: NuGet sources.
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: ThirdParty cache.
+        id: cache-third-party
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
+
+      - name: Libraries cache.
+        id: cache-libs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-ultra-x64-release-libs-v2-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-ultra-x64-release-libs-v2-
+
+      - name: Qt cache.
+        id: cache-qt
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-ultra-x64-release-qt-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-ultra-x64-release-qt-
+
+      - name: Libraries.
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent qt6 qt-release-only
+
+      - name: Free up some disk space.
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/src/wallet_engine/*' -o -path '*/tde2e/sqlite/sqlite/sqlite3.c' -o '(' '(' -path '*/tlottie/*' -o -path '*/wallet-engine/*' ')' ! -path '*/target/*' ')' ')' -type f ')' -o '(' -empty ! -path '*/tlottie/*' ! -path '*/wallet-engine/*' ')' ')' -delete
+
+      - name: Verify retained SQLite sources.
+        shell: bash
+        run: |
+          test -s "$LibrariesPath/tde2e/sqlite/sqlite/sqlite3.c"
+          test -s "$LibrariesPath/tde2e/sqlite/sqlite/sqlite3.h"
+
+      - name: Save ThirdParty cache.
+        if: steps.cache-third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ steps.cache-third-party.outputs.cache-primary-key }}
+
+      - name: Save Libraries cache.
+        if: steps.cache-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-libs.outputs.cache-primary-key }}
+
+      - name: Save Qt cache.
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-qt.outputs.cache-primary-key }}
+
+      - name: Report disk space before compilation.
+        shell: pwsh
+        run: Get-Volume | Select-Object DriveLetter, SizeRemaining, Size | Format-Table -AutoSize
+
+      - name: Build Release.
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          cd /d "%TBUILD%\%REPO_NAME%\Telegram"
+          call configure.bat -G "Ninja Multi-Config" qt6 ^
+            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT:STRING= ^
+            -D DESKTOP_APP_SPECIAL_TARGET=win64 ^
+            -D TDESKTOP_API_TEST=OFF ^
+            -D TDESKTOP_API_ID=%API_ID% ^
+            -D TDESKTOP_API_HASH=%API_HASH% ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          if errorlevel 1 exit /b 1
+          cmake --build ..\out --config Release --target Telegram
+
+      - name: Report disk space after compilation.
+        if: always()
+        shell: pwsh
+        run: Get-Volume | Select-Object DriveLetter, SizeRemaining, Size | Format-Table -AutoSize
+
+      - name: Package and verify.
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:TBUILD "$env:REPO_NAME\out\Release"
+          $exe = Join-Path $source 'Telegram.exe'
+          $binary = [System.IO.BinaryReader]::new([System.IO.File]::OpenRead($exe))
+          try {
+            if ($binary.ReadUInt16() -ne 0x5a4d) { throw 'Missing DOS header.' }
+            $binary.BaseStream.Position = 0x3c
+            $binary.BaseStream.Position = $binary.ReadUInt32()
+            if ($binary.ReadUInt32() -ne 0x4550 -or $binary.ReadUInt16() -ne 0x8664) {
+              throw 'The package requires a Windows x64 executable.'
+            }
+          } finally {
+            $binary.Dispose()
+          }
+          $stage = Join-Path $env:RUNNER_TEMP 'windows-release-package'
+          $app = Join-Path $stage 'TelegramUltra'
+          New-Item -ItemType Directory -Path "$app\TelegramUltraPortable" -Force | Out-Null
+          New-Item -ItemType File -Path "$app\TelegramUltraPortable\.keep" -Force | Out-Null
+          Copy-Item $exe $app
+          $compiler = Join-Path $source 'modules\x64\d3d\d3dcompiler_47.dll'
+          if (-not (Test-Path $compiler)) { throw 'The ANGLE compiler DLL is missing.' }
+          Copy-Item (Join-Path $source 'modules') $app -Recurse
+          $output = Join-Path $env:GITHUB_WORKSPACE 'release'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $archive = Join-Path $output 'TelegramUltra-Windows-x64-Release.zip'
+          Push-Location $stage
+          try {
+            & 7z a -tzip -mx=9 $archive TelegramUltra
+            if ($LASTEXITCODE -ne 0) { throw 'ZIP creation failed.' }
+            & 7z t $archive
+            if ($LASTEXITCODE -ne 0) { throw 'ZIP verification failed.' }
+          } finally {
+            Pop-Location
+          }
+          $digest = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  TelegramUltra-Windows-x64-Release.zip" |
+            Set-Content (Join-Path $output 'SHA256SUMS-Windows-x64.txt') -Encoding utf8NoBOM
+          @{
+            commit = $env:SOURCE_COMMIT
+            workflow_commit = $env:GITHUB_SHA
+            tag = $env:RELEASE_TAG
+            configuration = 'Release'
+            architecture = 'x64'
+            signing = 'unsigned'
+            run = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          } | ConvertTo-Json | Set-Content (Join-Path $output 'build-info-Windows-x64.json') -Encoding utf8NoBOM
+          Remove-Item $stage -Recurse -Force
+
+      - name: Upload package.
+        uses: actions/upload-artifact@v7
+        with:
+          name: TelegramUltra-Windows-x64-Release
+          path: release/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish macOS and Windows Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages.
+        uses: actions/download-artifact@v8
+        with:
+          pattern: TelegramUltra-*-Release
+          merge-multiple: true
+          path: release
+
+      - name: Verify packages and source commits.
+        working-directory: release
+        run: |
+          sha256sum --check SHA256SUMS.txt
+          sha256sum --check SHA256SUMS-Windows-x64.txt
+          python3 - <<'PYINFO'
+          import json, os
+          from pathlib import Path
+          for name in ('build-info.json', 'build-info-Windows-x64.json'):
+              info = json.loads(Path(name).read_text())
+              if info['commit'] != os.environ['GITHUB_SHA']:
+                  raise SystemExit(f'{name}: unexpected source commit')
+              if info['tag'] != os.environ['RELEASE_TAG']:
+                  raise SystemExit(f'{name}: unexpected release tag')
+          PYINFO
+
+      - name: Publish both packages.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          TelegramUltra macOS arm64 和 Windows x64 Release 构建。
+
+          使用正式 API 凭据，自动更新关闭。
+          macOS 包采用 ad-hoc 签名，未经过 Apple 公证；Windows 包未做 Authenticode 签名。
+
+          源码提交：$GITHUB_SHA
+          [GitHub 构建记录](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
+          EOF
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --draft --title "TelegramUltra $RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release upload "$RELEASE_TAG" "$GITHUB_WORKSPACE/release/"* \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --notes-file "$RUNNER_TEMP/release-notes.md"

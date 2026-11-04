@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_passkeys.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/ui_integration.h"
@@ -483,6 +485,11 @@ void PasskeysNoneBox(
 			- st.buttonPadding.left());
 		const auto show = box->uiShow();
 		button->setClickedCallback([=] {
+			const auto error = Core::AccountSystemNetworkError();
+			if (!error.isEmpty()) {
+				show->showToast(error);
+				return;
+			}
 			session->passkeys().initRegistration(crl::guard(box, [=](
 					const Data::Passkey::RegisterData &data) {
 				Platform::WebAuthn::RegisterKey(data, crl::guard(box, [=](

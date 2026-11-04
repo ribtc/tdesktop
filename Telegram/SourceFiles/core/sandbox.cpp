@@ -123,6 +123,11 @@ Sandbox::Sandbox(int &argc, char **argv)
 }
 
 int Sandbox::start() {
+	if (!Logs::started()) {
+		_started = true;
+		new NotStartedWindow();
+		return exec();
+	}
 	{
 		const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
 		char h[33] = { 0 };

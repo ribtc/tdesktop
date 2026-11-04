@@ -401,31 +401,6 @@ void Application::run() {
 		showAccount(account);
 	}, _lifetime);
 
-	(
-		_domain->activeValue(
-		) | rpl::to_empty | rpl::filter([=] {
-			return _domain->started();
-		}) | rpl::take(1)
-	) | rpl::then(
-		_domain->accountsChanges()
-	) | rpl::map([=] {
-		return (_domain->accounts().size() > Main::Domain::kMaxAccounts)
-			? _domain->activeChanges()
-			: rpl::never<not_null<Main::Account*>>();
-	}) | rpl::flatten_latest(
-	) | rpl::on_next([=](not_null<Main::Account*> account) {
-		const auto ordered = _domain->orderedAccounts();
-		const auto it = ranges::find(ordered, account);
-		if (_lastActivePrimaryWindow && it != end(ordered)) {
-			const auto index = std::distance(begin(ordered), it);
-			if ((index + 1) > _domain->maxAccounts()) {
-				_lastActivePrimaryWindow->show(Box(
-					AccountsLimitBox,
-					&account->session()));
-			}
-		}
-	}, _lifetime);
-
 	QCoreApplication::instance()->installEventFilter(this);
 
 	appDeactivatedValue(
@@ -439,7 +414,9 @@ void Application::run() {
 
 	DEBUG_LOG(("Application Info: window created..."));
 
-	startDomain();
+	if (!startDomain()) {
+		return;
+	}
 	startTray();
 
 	_lastActivePrimaryWindow->firstShow();
@@ -545,8 +522,11 @@ void Application::showOpenGLCrashNotification() {
 	}));
 }
 
-void Application::startDomain() {
+bool Application::startDomain() {
 	const auto state = _domain->start(QByteArray());
+	if (state == Storage::StartResult::ReadFailed) {
+		return false;
+	}
 	if (state != Storage::StartResult::IncorrectPasscodeLegacy) {
 		// In case of non-legacy passcoded app all global settings are ready.
 		startSettingsAndBackground();
@@ -555,6 +535,7 @@ void Application::startDomain() {
 		lockByPasscode();
 		DEBUG_LOG(("Application Info: passcode needed..."));
 	}
+	return true;
 }
 
 void Application::startSettingsAndBackground() {
@@ -972,6 +953,7 @@ void Application::badMtprotoConfigurationError(const MTP::ProxyData &proxy) {
 void Application::startLocalStorage() {
 	Ui::GL::DetectLastCheckCrash();
 	Local::start();
+	_langpack->applySystemLanguage();
 	_saveSettingsTimer.emplace([=] { saveSettings(); });
 	settings().saveDelayedRequests() | rpl::on_next([=] {
 		saveSettingsDelayed();
@@ -1999,15 +1981,7 @@ void Application::postponeCall(FnMut<void()> &&callable) {
 }
 
 void Application::refreshGlobalProxy() {
-	const auto &proxySettings = settings().proxy();
-	const auto proxy = proxySettings.isEnabled()
-		? proxySettings.selected()
-		: MTP::ProxyData();
-	if (proxy.type == MTP::ProxyData::Type::Web && proxy.valid()) {
-		MTP::WebProxy::Transport::Activate(proxy);
-	} else {
-		MTP::WebProxy::Transport::Deactivate();
-	}
+	MTP::WebProxy::Transport::Deactivate();
 	Sandbox::Instance().refreshGlobalProxy();
 }
 
@@ -2131,8 +2105,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"Telegram Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
@@ -2142,8 +2116,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"TonSite Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
@@ -2153,8 +2127,8 @@ void Application::RegisterUrlScheme() {
 		.protocolName = u"Ton Link"_q,
 		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
-		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppName = AppDisplayName.utf16(),
+		.displayAppDescription = AppDisplayName.utf16(),
 	});
 }
 

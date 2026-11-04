@@ -8,9 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "data/data_authorization.h"
+#include "base/timer.h"
 #include "mtproto/sender.h"
 
 class ApiWrap;
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Api {
 
@@ -23,8 +28,10 @@ public:
 
 		bool incomplete = false;
 		bool callsDisabled = false;
+		bool unconfirmed = false;
 		int apiId = 0;
 		TimeId activeTime = 0;
+		TimeId createdTime = 0;
 		QString name, active, info, ip, location, system, platform;
 	};
 	using List = std::vector<Entry>;
@@ -65,8 +72,16 @@ public:
 private:
 	void refreshCallsDisabledHereFromCloud();
 	void removeExpiredUnreviewed();
+	void guardAuthorizations();
+	void reconcileProtection();
+	void finishProtection(uint64 hash, const QString &device, bool success);
+	void reportProtectionFailure(uint64 hash, const QString &device);
 
+	const not_null<Main::Session*> _session;
 	MTP::Sender _api;
+	base::Timer _protectionTimer;
+	base::flat_set<uint64> _protectionAttempts;
+	base::flat_map<uint64, mtpRequestId> _protectionRequests;
 	mtpRequestId _requestId = 0;
 
 	List _list;

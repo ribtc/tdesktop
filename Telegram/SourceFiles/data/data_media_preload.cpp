@@ -157,7 +157,7 @@ bool VideoPreload::Can(not_null<DocumentData*> video) {
 		&& video->bigFileBaseCacheKey();
 }
 
-bool VideoPreload::readyToRequest() const {
+bool VideoPreload::readyToRequestImpl() const {
 	const auto part = Storage::kDownloadPartSize;
 	return !_failed && (_nextRequestOffset < _parts.size() * part);
 }

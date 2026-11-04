@@ -7,7 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/translate_provider.h"
 
+#include "main/main_account.h"
+#include "main/main_session.h"
+
 #include "base/options.h"
+#include "base/platform/base_platform_info.h"
+#include "core/account_network_restrictions.h"
+#include "ui/toast/toast.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "data/data_msg_id.h"
@@ -19,6 +25,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_translate_provider.h"
 
 namespace {
+
+class UnavailableTranslateProvider final : public Ui::TranslateProvider {
+public:
+	bool supportsMessageId() const override {
+		return false;
+	}
+
+	void request(
+			Ui::TranslateProviderRequest request,
+			LanguageId to,
+			Fn<void(Ui::TranslateProviderResult)> done) override {
+		Ui::Toast::Show(Core::AccountSystemNetworkError());
+		done({ .error = Ui::TranslateProviderError::Unknown });
+	}
+
+};
 
 base::options::option<QString> OptionTranslateUrlTemplate({
 	.id = "translate-url-template",
@@ -36,10 +58,14 @@ std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 	const auto urlTemplate = OptionTranslateUrlTemplate.value();
 	if (!urlTemplate.isEmpty()
 		&& urlTemplate.contains(u"%q"_q)) {
-		return CreateUrlTranslateProvider(urlTemplate);
+		return CreateUrlTranslateProvider(
+			urlTemplate, session->account().network());
 	}
 	if (Core::App().settings().usePlatformTranslation()
 		&& Platform::IsTranslateProviderAvailable()) {
+		if (!Platform::IsMac()) {
+			return std::make_unique<UnavailableTranslateProvider>();
+		}
 		return Platform::CreateTranslateProvider();
 	}
 	return CreateMTProtoTranslateProvider(session);

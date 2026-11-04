@@ -309,7 +309,7 @@ NativeIcon::NativeIcon()
 
 	_status.button.target = buttonCallback;
 	_status.button.action = @selector(invoke);
-	_status.button.toolTip = Q2NSString(AppName.utf16());
+	_status.button.toolTip = Q2NSString(AppDisplayName.utf16());
 }
 
 NativeIcon::~NativeIcon() {

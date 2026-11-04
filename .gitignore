@@ -64,6 +64,9 @@ settings.local.json
 .env
 .env.local
 .env.*.local
+/docs/account/
+/tests/test_bot_menu_hold/emoji/
+/ui-cut/**/*.log
 
 # Cursor IDE local settings (but keep .cursor/rules/)
 .cursor/*

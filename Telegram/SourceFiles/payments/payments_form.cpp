@@ -7,38 +7,42 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/payments_form.h"
 
-#include "main/main_session.h"
+#include "api/api_text_entities.h"
+#include "core/core_cloud_password.h"
+#include "countries/countries_instance.h"
 #include "data/data_channel.h"
-#include "data/data_session.h"
+#include "data/data_file_origin.h"
 #include "data/data_media_types.h"
-#include "data/data_user.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
-#include "data/data_file_origin.h"
-#include "countries/countries_instance.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
-#include "stripe/stripe_api_client.h"
-#include "stripe/stripe_error.h"
-#include "stripe/stripe_token.h"
-#include "stripe/stripe_card_validator.h"
+#include "lang/lang_keys.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+#include "mtproto/http_transport.h"
 #include "smartglocal/smartglocal_api_client.h"
 #include "smartglocal/smartglocal_error.h"
 #include "smartglocal/smartglocal_token.h"
 #include "storage/storage_account.h"
+#include "stripe/stripe_api_client.h"
+#include "stripe/stripe_card_validator.h"
+#include "stripe/stripe_error.h"
+#include "stripe/stripe_token.h"
 #include "ui/image/image.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_entity.h"
-#include "apiwrap.h"
-#include "api/api_text_entities.h"
-#include "core/core_cloud_password.h"
-#include "window/themes/window_theme.h"
 #include "webview/webview_interface.h"
-#include "styles/style_payments.h" // paymentsThumbnailSize.
+#include "window/themes/window_theme.h"
+#include "apiwrap.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
+
+#include "styles/style_payments.h" // paymentsThumbnailSize.
 
 namespace Payments {
 namespace {
@@ -1193,11 +1197,20 @@ void Form::validateCard(
 	if (_stripe) {
 		return;
 	}
+	if (!_session->account().network().snapshot().httpProxy()) {
+		_updates.fire(Error{
+			Error::Type::Validate,
+			tr::lng_account_payment_blocked(tr::now),
+		});
+		return;
+	}
 	auto configuration = Stripe::PaymentConfiguration{
 		.publishableKey = method.publishableKey,
 		.companyName = "Telegram",
 	};
-	_stripe = std::make_unique<Stripe::APIClient>(std::move(configuration));
+	_stripe = std::make_unique<Stripe::APIClient>(
+		std::move(configuration),
+		std::make_unique<MTP::HttpTransport>(_session->account().network()));
 	auto card = Stripe::CardParams{
 		.number = details.number,
 		.expMonth = details.expireMonth,
@@ -1208,12 +1221,18 @@ void Form::validateCard(
 		.addressCountry = details.addressCountry,
 	};
 	showProgress();
+	const auto route = _session->account().network().snapshot();
 	_stripe->createTokenWithCard(std::move(card), crl::guard(this, [=](
 			Stripe::Token token,
 			Stripe::Error error) {
 		hideProgress();
 		_stripe = nullptr;
 
+		if (!route.current()) {
+			_updates.fire(Error{ Error::Type::Validate,
+				tr::lng_account_route_changed(tr::now) });
+			return;
+		}
 		if (error) {
 			LOG(("Stripe Error %1: %2 (%3)"
 				).arg(int(error.code())
@@ -1241,13 +1260,21 @@ void Form::validateCard(
 	if (_smartglocal) {
 		return;
 	}
+	if (!_session->account().network().snapshot().httpProxy()) {
+		_updates.fire(Error{
+			Error::Type::Validate,
+			tr::lng_account_payment_blocked(tr::now),
+		});
+		return;
+	}
 	auto configuration = SmartGlocal::PaymentConfiguration{
 		.publicToken = method.publicToken,
 		.tokenizeUrl = method.tokenizeUrl,
 		.isTest = _invoice.isTest,
 	};
 	_smartglocal = std::make_unique<SmartGlocal::APIClient>(
-		std::move(configuration));
+		std::move(configuration),
+		std::make_unique<MTP::HttpTransport>(_session->account().network()));
 	auto card = Stripe::CardParams{
 		.number = details.number,
 		.expMonth = details.expireMonth,
@@ -1258,12 +1285,18 @@ void Form::validateCard(
 		.addressCountry = details.addressCountry,
 	};
 	showProgress();
+	const auto route = _session->account().network().snapshot();
 	_smartglocal->createTokenWithCard(std::move(card), crl::guard(this, [=](
 			SmartGlocal::Token token,
 			SmartGlocal::Error error) {
 		hideProgress();
 		_smartglocal = nullptr;
 
+		if (!route.current()) {
+			_updates.fire(Error{ Error::Type::Validate,
+				tr::lng_account_route_changed(tr::now) });
+			return;
+		}
 		if (error) {
 			LOG(("SmartGlocal Error %1: %2 (%3)"
 				).arg(int(error.code())

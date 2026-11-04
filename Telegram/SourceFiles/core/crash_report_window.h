@@ -75,7 +75,7 @@ public:
 
 class NotStartedWindow : public PreLaunchWindow {
 public:
-	NotStartedWindow();
+	NotStartedWindow(const QString &error = QString());
 
 protected:
 	void closeEvent(QCloseEvent *e) override;

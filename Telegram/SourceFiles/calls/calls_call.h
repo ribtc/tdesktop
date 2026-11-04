@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/bytes.h"
 #include "mtproto/sender.h"
+#include "mtproto/network_context.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "webrtc/webrtc_device_resolver.h"
 #include "webrtc/webrtc_system_audio_capture.h"
@@ -318,6 +319,7 @@ private:
 	bool checkCallFields(const MTPDphoneCallAccepted &call);
 
 	void actuallyAnswer();
+	void watchNetwork();
 	void acceptConferenceInvite();
 	void confirmAcceptedCall(const MTPDphoneCallAccepted &call);
 	void startConfirmedCall(const MTPDphoneCall &call);
@@ -340,6 +342,7 @@ private:
 	const not_null<Delegate*> _delegate;
 	const not_null<UserData*> _user;
 	MTP::Sender _api;
+	const MTP::NetworkSnapshot _network;
 	Type _type = Type::Outgoing;
 	rpl::variable<State> _state = State::Starting;
 	rpl::variable<bool> _conferenceSupported = false;

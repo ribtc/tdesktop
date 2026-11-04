@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/payments_checkout_process.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "payments/payments_form.h"
 #include "payments/ui/payments_panel.h"
 #include "main/main_session.h"
@@ -442,8 +444,9 @@ void CheckoutProcess::handleFormUpdate(const FormUpdate &update) {
 				data.url,
 				Ui::WebviewMode::Verification,
 				std::move(bottomText))) {
-			File::OpenUrl(data.url);
-			close();
+			_sendFormPending = false;
+			_sendFormFailed = true;
+			_panel->showCriticalError({ Core::AccountWebViewError() });
 		}
 	}, [&](const PaymentFinished &data) {
 		const auto weak = base::make_weak(this);
@@ -928,7 +931,7 @@ void CheckoutProcess::panelSetPassword() {
 }
 
 void CheckoutProcess::panelOpenUrl(const QString &url) {
-	File::OpenUrl(url);
+	_panel->showCriticalError({ Core::AccountWebViewError() });
 }
 
 void CheckoutProcess::getPasswordState(

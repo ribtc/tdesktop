@@ -1745,12 +1745,16 @@ void PeerData::processTopics(const MTPVector<MTPForumTopic> &topics) {
 }
 
 bool PeerData::allowsForwarding() const {
+	return true;
+}
+
+bool PeerData::hasProtectedContent() const {
 	if (const auto user = asUser()) {
-		return user->allowsForwarding();
+		return user->hasProtectedContent();
 	} else if (const auto channel = asChannel()) {
-		return channel->allowsForwarding();
+		return channel->hasProtectedContent();
 	} else if (const auto chat = asChat()) {
-		return chat->allowsForwarding();
+		return chat->hasProtectedContent();
 	}
 	return false;
 }

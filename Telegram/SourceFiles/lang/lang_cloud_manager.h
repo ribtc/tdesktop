@@ -60,6 +60,7 @@ private:
 	void requestLangPackDifference(Pack pack);
 	bool canApplyWithoutRestart(const QString &id) const;
 	void performSwitchToCustom();
+	bool switchToBundledLanguage(const QString &id);
 	void performSwitch(const Language &data);
 	void performSwitchAndAddToRecent(const Language &data);
 	void performSwitchAndRestart(const Language &data);
@@ -69,6 +70,7 @@ private:
 	Language findOfferedLanguage() const;
 
 	void requestLanguageAndSwitch(const QString &id, bool warning);
+	void cancelLanguageSwitch();
 	void applyLangPackData(Pack pack, const MTPDlangPackDifference &data);
 	void switchLangPackId(const Language &data);
 	void changeIdAndReInitConnection(const Language &data);

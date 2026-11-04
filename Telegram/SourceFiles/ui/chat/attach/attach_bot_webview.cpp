@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/chat/attach/attach_bot_webview.h"
 
+#include "core/account_network_restrictions.h"
+
 #include "ui/chat/attach/attach_bot_downloads.h"
 #include "ui/chat/attach/attach_bot_webview_linux_shell.h"
 #include "ui/effects/radial_animation.h"
@@ -1329,7 +1331,13 @@ Panel::Panel(Args &&args)
 	_externalTitleBadgeVisible = (args.titleBadge.paint != nullptr);
 	_widget->setTitleBadge(std::move(args.titleBadge));
 
-	if (!showWebview(std::move(args), params)) {
+	if (!Core::AccountWebViewError().isEmpty()) {
+		if (_externalLayer) {
+			showExternalShellError({ Core::AccountWebViewError() });
+		} else {
+			showCriticalError({ Core::AccountWebViewError() });
+		}
+	} else if (!showWebview(std::move(args), params)) {
 		if (_externalLayer) {
 			const auto available = Webview::Availability();
 			if (available.error != Webview::Available::Error::None) {
@@ -2193,6 +2201,10 @@ void Panel::createWebviewBottom() {
 }
 
 bool Panel::createWebview(const Webview::ThemeParams &params) {
+	if (!Core::AccountWebViewError().isEmpty()) {
+		return false;
+	}
+
 	RpWidget *container = nullptr;
 	if (_externalShell) {
 		_externalWebviewParent = std::make_unique<RpWidget>();

@@ -2639,6 +2639,7 @@ if (WIN32)
         )
     endif()
 
+    target_link_libraries(Telegram PRIVATE dnsapi)
     target_link_options(Telegram PRIVATE /PDBPAGESIZE:8192)
 
     if (DESKTOP_APP_WIN7_BASELINE)

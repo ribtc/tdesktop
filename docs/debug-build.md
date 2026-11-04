@@ -46,10 +46,14 @@ Debug 与 Release 的对象不能混用，各保留一套固定增量目录；�
 
 ```sh
 gh workflow run ci.yml --ref codex/account-network-isolation
+
+# 仅重跑 Windows 正式版构建。
+gh workflow run ci.yml --ref codex/account-network-isolation -f platform=windows
 ```
 
 手动入口需先让 `ci.yml` 进入仓库默认分支。`--ref` 选择包含该工作流的分支或
-标签，两端始终检出同一事件提交。构建产物保留一天，可从 Actions 页面下载。
+标签；platform 默认为 all，也可选择 windows 或 macos。各平台检出同一事件提交。
+构建产物保留一天，可从 Actions 页面下载。
 修改配置且本次不需要构建时，在提交消息中加入 `[skip ci]` 后仅推送分支，
 不推送发布标签，也不手动运行工作流。
 

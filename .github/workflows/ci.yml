@@ -5,6 +5,15 @@ on:
     tags:
       - 'v*-telegram-ultra.*'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - macos
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,6 +28,7 @@ env:
 jobs:
   build-macos:
     name: macOS arm64 Release
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
     runs-on: macos-26
     timeout-minutes: 360
 
@@ -284,6 +294,7 @@ jobs:
 
   build-windows:
     name: Windows x64 Release
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'macos'
     runs-on: windows-latest
     timeout-minutes: 360
 

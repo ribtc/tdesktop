@@ -141,7 +141,9 @@ void AccountList::refresh() {
 		}, _rowsLifetime);
 	}
 	_count = int(_rows.size());
-	resize(st::windowAccountsWidth, _count.current() * st::windowAccountsRow);
+	resize(st::windowAccountsWidth, std::max(
+		0,
+		_count.current() * st::windowAccountsRow - st::windowAccountsRowSkip));
 	_selected = -1;
 	for (auto i = 0; i != int(_rows.size()); ++i) {
 		if (_rows[i].account.get() == &domain.active()) {
@@ -297,10 +299,6 @@ void AccountList::keyPressEvent(QKeyEvent *e) {
 AccountsRail::AccountsRail(QWidget *parent, not_null<Controller*> controller)
 : RpWidget(parent) {
 	setVisualTabOrder(true);
-	const auto title = Ui::CreateChild<Ui::FlatLabel>(
-		this,
-		tr::lng_accounts_rail_title(),
-		st::windowAccountsTitle);
 	const auto scroll = Ui::CreateChild<Ui::ScrollArea>(this);
 	const auto list = scroll->setOwnedWidget(
 		object_ptr<AccountList>(scroll, controller, scroll));
@@ -310,21 +308,14 @@ AccountsRail::AccountsRail(QWidget *parent, not_null<Controller*> controller)
 	const auto add = Ui::CreateChild<Ui::IconButton>(
 		this,
 		st::windowAccountsAdd);
-	const auto allLabel = Ui::CreateChild<Ui::FlatLabel>(
-		all,
-		tr::lng_accounts_all_short(),
-		st::windowAccountsTitle);
 	const auto count = Ui::CreateChild<Ui::FlatLabel>(
 		all,
 		list->countValue() | rpl::map([](int value) {
 			return QString::number(value);
 		}),
 		st::windowAccountsCount);
-	allLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 	count->setAttribute(Qt::WA_TransparentForMouseEvents);
-	allLabel->resizeToWidth(st::windowAccountsWidth);
 	count->resizeToWidth(st::windowAccountsWidth);
-	allLabel->move(0, st::windowAccountsAllTextTop);
 	count->move(0, st::windowAccountsCountTop);
 	all->setClickedCallback([=] { controller->widget()->showAccounts(); });
 	add->setClickedCallback([=] {
@@ -341,22 +332,34 @@ AccountsRail::AccountsRail(QWidget *parent, not_null<Controller*> controller)
 		add->setAccessibleName(text);
 		add->setToolTip(text);
 	}, lifetime());
-	sizeValue() | rpl::on_next([=](QSize size) {
-		title->resizeToWidth(size.width());
-		title->move(0, st::windowAccountsTitleTop);
-		const auto footer = all->height() + add->height();
+	rpl::combine(
+		sizeValue(),
+		list->heightValue()
+	) | rpl::on_next([=](QSize size, int listHeight) {
 		const auto top = st::windowAccountsHeader;
-		scroll->setGeometry(
+		const auto gap = st::windowAccountsSectionSkip;
+		const auto divider = gap * 2 + st::lineWidth;
+		const auto addTop = size.height()
+			- st::windowAccountsBottomSkip
+			- add->height();
+		const auto available = std::max(
 			0,
-			top,
-			size.width(),
-			std::max(0, size.height() - top - footer));
-		all->move(0, size.height() - footer);
-		add->move(0, size.height() - add->height());
+			addTop - gap * 2 - all->height() - divider - top);
+		const auto height = std::min(listHeight, available);
+		scroll->setGeometry(0, top, size.width(), height);
+		all->move(0, top + height + divider);
+		add->move((size.width() - add->width()) / 2, addTop);
+		update();
 	}, lifetime());
 	paintRequest() | rpl::on_next([=](QRect clip) {
 		auto p = Painter(this);
 		p.fillRect(clip, st::sideBarBg);
+		p.fillRect(
+			(width() - st::windowAccountsDividerWidth) / 2,
+			scroll->y() + scroll->height() + st::windowAccountsSectionSkip,
+			st::windowAccountsDividerWidth,
+			st::lineWidth,
+			st::sideBarBgActive);
 	}, lifetime());
 }
 

@@ -46,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/channel_statistics/boosts/giveaway/select_countries_box.h"
 #include "lang/lang_keys.h"
 #include "layout/layout_document_generic_preview.h"
+#include "main/main_account.h"
 #include "main/main_app_config.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
@@ -2630,9 +2631,11 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 			.parent = _controller->widget().get(),
 			.config = config,
 			.chooseLabel = tr::lng_maps_point_send(),
-			.session = session,
-			.callback = crl::guard(this, [=](Data::InputVenue venue) {
-				applyGeo(venue.lat, venue.lon);
+			.network = &session->account().network(),
+			.callback = crl::guard(this, [=](
+					Data::LocationPoint point,
+					QString) {
+				applyGeo(point.lat(), point.lon());
 			}),
 			.quit = [] { Shortcuts::Launch(Shortcuts::Command::Quit); },
 			.storageId = session->local().resolveStorageIdBots(),

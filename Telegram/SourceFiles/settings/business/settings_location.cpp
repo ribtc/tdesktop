@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "lang/lang_keys.h"
+#include "main/main_account.h"
 #include "main/main_app_config.h"
 #include "main/main_session.h"
 #include "mainwidget.h"
@@ -237,12 +238,10 @@ void Location::chooseOnMap() {
 		strong->activate();
 		return;
 	}
-	const auto callback = [=](Data::InputVenue venue) {
+	const auto callback = [=](Data::LocationPoint point, QString address) {
 		auto copy = _data.current();
-		copy.point = Data::LocationPoint::FromCoordinates(
-			venue.lat,
-			venue.lon);
-		copy.address = venue.address;
+		copy.point = point;
+		copy.address = std::move(address);
 		_data = std::move(copy);
 	};
 	const auto session = &controller()->session();
@@ -257,7 +256,7 @@ void Location::chooseOnMap() {
 		.parent = controller()->widget(),
 		.config = _config,
 		.chooseLabel = tr::lng_maps_point_set(),
-		.session = session,
+		.network = &session->account().network(),
 		.initial = initial,
 		.callback = crl::guard(this, callback),
 		.quit = [] { Shortcuts::Launch(Shortcuts::Command::Quit); },

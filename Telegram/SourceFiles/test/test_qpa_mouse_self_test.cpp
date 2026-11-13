@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#ifdef _DEBUG
+#if defined _DEBUG || defined TDESKTOP_RELEASE_TEST_HARNESS
 
 #include "test/test_qpa_mouse.h"
 
@@ -1353,7 +1353,7 @@ void BuildPair(
 		QPoint cursor) {
 	const auto titleRoom = st::defaultActiveButton.height;
 	auto column = QSize();
-	for (const auto window : windows) {
+	for (const auto &window : windows) {
 		const auto size = window->size();
 		column = QSize(
 			std::max(column.width(), size.width()),
@@ -1361,7 +1361,7 @@ void BuildPair(
 	}
 	auto position = FarCorner(available, column, cursor);
 	const auto bounds = QRect(position, column);
-	for (const auto window : windows) {
+	for (const auto &window : windows) {
 		const auto size = window->size();
 		position.ry() += titleRoom;
 		window->setGeometry(QRect(position, size));
@@ -3440,4 +3440,4 @@ void AppendQpaMouseSelfTest(not_null<Runner*> runner) {
 
 } // namespace Test
 
-#endif // _DEBUG
+#endif // _DEBUG || TDESKTOP_RELEASE_TEST_HARNESS

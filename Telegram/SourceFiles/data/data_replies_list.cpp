@@ -128,6 +128,7 @@ void RepliesList::subscribeToUpdates() {
 void RepliesList::apply(const RepliesReadTillUpdate &update) {
 	if (update.out) {
 		setOutboxReadTill(update.readTillId);
+		return;
 	} else if (update.readTillId >= _inboxReadTillId) {
 		setInboxReadTill(
 			update.readTillId,
@@ -140,6 +141,11 @@ void RepliesList::apply(const RepliesReadTillUpdate &update) {
 				_fullCount.current(),
 				_unreadCount.current(),
 				_inboxReadTillId));
+	}
+	if (const auto topic = _history->peer->forumTopicFor(_rootId)) {
+		Core::App().notifications().clearReadFromTopic(
+			topic,
+			update.readTillId);
 	}
 }
 
@@ -523,6 +529,17 @@ void RepliesList::applyDifferenceTooLong() {
 		_skippedAfter = std::nullopt;
 		_listChanges.fire({});
 	}
+}
+
+void RepliesList::markJustCreated() {
+	Expects(!_creating);
+
+	_skippedBefore = _skippedAfter = 0;
+	_list.clear();
+	if (lookupRoot()) {
+		_list.push_back(_rootId);
+	}
+	_fullCount = int(_list.size());
 }
 
 void RepliesList::changeUnreadCountByPost(MsgId id, int delta) {

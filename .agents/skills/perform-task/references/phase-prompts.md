@@ -116,8 +116,8 @@ Do not restate the full context, plan, diff, or long reasoning in the chat reply
 
 - Phase 1 is complete only when `context.md` exists and is non-empty, `plan.md`
   exists, records `Code: harness` or `Code: product`, and contains a
-  `## Status` section, and no unintended source edits were made. A project
-  amendment is optional. For a `Visual: layout` task,
+  `## Status` section, and no unintended source edits were made. For a
+  `Visual: layout` task,
   `visual.md` must also satisfy the visual design completion check below.
 - Phase 3 is complete only when `plan.md` contains both `Phases:` in the Status section and `Assessed: yes`, records a rejection outcome (`Fast-Path: rejected` or `Approach: rejected`) that sends the performer back to a fresh Phase 1 leaf, or records `Scope: split-required` and has a complete `split-proposal.md` that stops source work for queue rescoping.
 - Phase 4 is complete only when the target phase checkbox changed to checked and the touched-file list matches the owned write set, or the blocker explains any mismatch.
@@ -168,8 +168,8 @@ YOUR JOB: Read AGENTS.md, inspect the relevant code, write task-specific impleme
 Steps:
 1. Read AGENTS.md for project conventions and build instructions.
 2. Read `.agents/shared/project-context.md` in the source checkout. When
-   `<PROJECT_FILE>` is not `none`, use its small shared overview to orient this
-   task; expand only concretely relevant dependencies and references under
+   `<PROJECT_FILE>` is not `none`, read its title and first paragraph to know
+   the area; expand only concretely relevant dependencies and references under
    that policy. Current task requirements and source govern the plan.
 3. Search the codebase for files, classes, functions, and patterns related to the task.
 4. Read the relevant source and adjacent behavior needed to resolve the task's
@@ -184,9 +184,7 @@ Steps:
 8. Check .style files if the task involves UI.
 9. Check lang.strings if the task involves user-visible text.
 
-When `<PROJECT_FILE>` is not `none` and a useful shared fact changes, propose
-`<WORK_DIR>/project-amendment.md` under the shared policy. Do not modify
-`<PROJECT_FILE>` in this phase. No amendment or placeholder is required otherwise.
+Never modify `<PROJECT_FILE>`.
 
 Always write `<WORK_DIR>/context.md`.
 
@@ -338,6 +336,12 @@ Assess the plan:
    - New files are not the problem: a focused file bounding a coherent role
      beats both growing a mega-module and scattering through one; judge
      whether the boundary does work, not whether it is new.
+   - Proportionality: size the plan to the request, not to how rigorous it
+     could be. Test fixtures, one-off tooling and harness-only work get the
+     smallest thing that produces the requested result; repeatability,
+     determinism, safety gates, read-back verification and validation that
+     the request does not name come out of the plan. A plan whose machinery
+     is several times what the result needs is `Approach: rejected`.
    - Harness code: check the plan's `Code:` line against its planned paths;
      any product path makes it `Code: product`. This is harness or testing
      code no user runs, so for `Code: harness` judge the plan against the
@@ -357,7 +361,12 @@ Assess the plan:
    necessary combination. Apply the revert test and remove unrelated checks.
    Preserve deep app testing when behavior lives in Telegram, and require tight
    captures for visible claims. Do not require Telegram for an isolated probe or
-   build-stage claim it cannot strengthen.
+   build-stage claim it cannot strengthen. For test fixtures and one-off
+   tooling, the evidence is that it ran and produced the requested result.
+   List every external prerequisite the evidence relies on (accounts and their
+   servers, server-side limits a run consumes, credentials, external files or
+   devices) under `## Prerequisites` in test-design.md with a cheap read-only
+   probe for each.
 7. Phase sizing: Each phase should be implementable by a single agent in one
    session. If a phase has more than about 8-10 substantive code changes, split
    the phase. Then assess the task as a whole: several well-sized phases do not

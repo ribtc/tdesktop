@@ -124,7 +124,7 @@ parts:
   patches:
     source: https://github.com/desktop-app/patches.git
     source-depth: 1
-    source-commit: 53e633d8c5455f3ced2cc88c1aa83ed6f64a534f
+    source-commit: e47f8669a2c144e13a2bc828b09abe6bfe89336e
     plugin: nil
     override-pull: |
       craftctl default
@@ -426,6 +426,7 @@ parts:
       - -DINSTALL_LIBDIR=/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR
       - -DBUILD_SHARED_LIBS=OFF
       - -DQT_QPA_PLATFORMS="wayland;xcb"
+      - -DFEATURE_brotli=OFF
       - -DFEATURE_eglfs=OFF
       - -DINPUT_openssl=linked
     override-pull: |
@@ -528,7 +529,7 @@ parts:
   webrtc:
     source: https://github.com/desktop-app/tg_owt.git
     source-depth: 1
-    source-commit: 49ceed3985d8626b3a24bdb14d9c593a115cc6e8
+    source-commit: 020feec5c040fdae2cf752c2c2be62ddde7c236d
     plugin: cmake
     build-packages:
       - libopenh264-dev

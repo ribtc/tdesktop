@@ -24,9 +24,10 @@ work in a fresh leaf worker. Delegate inbox planning and one-task execution; do
 not plan or implement Telegram changes in this scheduler session.
 
 A run often has nobody at the computer. After the startup report and any
-startup question about the specification, never ask the owner anything and
-never wait for an answer: decide, record the decision in the report, and
-continue. Work that genuinely needs the owner (credentials, money, a server
+startup question about the specification or about uncommitted source of
+unknown origin (see [Switch to the project branch](#switch-to-the-project-branch)),
+never ask the owner anything and never wait for an answer: decide, record the
+decision in the report, and continue. Work that genuinely needs the owner (credentials, money, a server
 change) is set aside and listed in the final report.
 
 This is the default development command and the successor to the old `task`
@@ -131,16 +132,18 @@ select:
   the refreshed startup snapshot of canonical master, including tasks still
   waiting on dependencies. Blocked tasks are not pending.
 
-Projects are branch-bound: a project's tasks are performed on the branch
-named by its slug, and standalone tasks on any branch that is not a live
-project's. The queue JSON's `branch_project` names the project whose branch is
-checked out, or is null. Select only tasks the current branch can start: on a
-project branch, that project's tasks (so "all pending tasks" there means the
-project's pending tasks); elsewhere, standalone tasks. Report every selected
-task the branch cannot start with the branch it needs. A specification that
-names a project whose branch is not checked out stops at startup with that
-report: the owner checks project branches out, and the scheduler never
-switches onto or off one. Several checkouts may run the same project at once.
+Every task belongs to a project, and a project's tasks are performed on the
+branch named by its slug. The checkout's current branch never limits the
+selection: the scheduler switches branches itself, as
+[Switch to the project branch](#switch-to-the-project-branch) describes, and
+the owner never checks a project branch out by hand. When the specification
+gives no order, keep the tasks of one project together, starting with the
+project whose branch is checked out (the queue JSON's `branch_project`), then
+in queue order, so the run switches as rarely as it can. Several checkouts may
+run the same project at once. A legacy task without a project runs on any
+branch that is not a live project's: switch to a compatible non-project local
+branch for it as the source-lineage gate below describes, or leave it for the
+owner when none exists.
 
 The specification may also ask to rebase the project onto a base branch, such
 as `origin/dev` or `private/alpha`. Record it as `base_rebase` and pass
@@ -172,6 +175,81 @@ canonical state, then select another recorded id. Always resume this
 checkout's `in-progress` task before other recorded work, unless the user
 expressly asks to stop or reassign it.
 
+### Switch to the project branch
+
+Before each Start, Retry, or resume of a batch task, put the checkout on the
+task's project branch, even when it is already checked out, because the
+switch also brings it up to date:
+
+```bash
+python3 .agents/skills/process-inbox/scripts/workspace.py project-switch \
+  --project <slug> --task <task-id> [--require <explicit-source-task-id> ...]
+```
+
+Pass the same `--require` arguments as the task's source-lineage gate. The
+helper never leaves work behind:
+
+1. It refuses uncommitted source changes, and a submodule checked out at a
+   commit no remote has, because nothing tells whose they are. The exception is
+   this checkout's own `in-progress`, `split-required` or reserved carrier task
+   in that project, when its branch is already checked out: its branch and
+   working tree stay exactly as they are. A task this checkout owns in another
+   project refuses the switch until it is finished.
+2. It publishes the branch it leaves. Local commits that `private/<branch>`
+   lacks are replayed on top of it, together with their submodule commits, and
+   pushed; that includes `alpha` and any other working branch. Commits the
+   remote branch dropped in a rewrite stay dropped. A branch `private` has
+   never had is pushed there as it is, or, for a project branch, replayed onto
+   `private/alpha` first. Only a project branch pushes submodule commits, to
+   the submodule's same-named branch; a non-project branch that pins a
+   submodule commit no remote has refuses the switch. When the reflogs cannot
+   tell which commits of a diverged branch are local, it refuses rather than
+   guess.
+3. It enters the project branch at `private/<slug>`, or at `private/alpha`
+   when the project has no remote branch yet. A local branch that diverged
+   without commits of its own is reset there. Local commits that never landed
+   are replayed on top and pushed. The submodules follow the new pins.
+4. It refreshes a stale project branch before the task starts
+   (`base_refresh`). A branch without the newest `vX.Y.Z` release tag of
+   `origin/dev` skipped a release, and moves onto `origin/dev`, or onto
+   `private/alpha` when only alpha keeps what the project needs. A branch
+   without approved source work the task requires moves onto
+   `private/alpha`. The project's own commits move: those whose trailer names
+   one of its tasks, and those without a trailer that neither `origin/dev`
+   nor `private/alpha` has. Other tasks' commits and the old base are
+   replaced by the new base, and commits it already has are dropped. The
+   branch is force-pushed with leases, submodule branches included. A base
+   is used only when it brings what is missing and has every prerequisite of
+   the task and of every project task the branch carries, so a move never
+   drops code the project builds on, and never when the branch already
+   contains it. A release-only refresh waits while another checkout has a
+   task of the project in progress (`deferred_for`). When no base qualifies,
+   the branch stays and the source-lineage gate decides. A failed rebase or
+   push leaves the branch as it was and reports `error`.
+
+When it refuses uncommitted changes before this run has started any task,
+that is the startup question: show the owner the paths and ask whether to save
+them with `workspace.py wip-save --reason "<what they are>"`, commit them to
+the current branch, discard them, or stop, then do what they say. A refusal
+over unpublished submodule commits or local commits it cannot identify is the
+same startup question, with its own options. Changes
+that appear later in the run come from its own workers: save them with
+`wip-save`, name the branch in the report, and switch again. A rejected push
+means another checkout published first: rerun `project-switch`. A replay
+conflict leaves every repository as it was: resolve it by reading both sides'
+intent, as the `/rebase` skill does, then rerun. Any other refusal, such as
+the branch being checked out in another worktree, leaves that task for a later
+invocation; report it and continue with tasks of other projects.
+
+Record the switches for the report: each branch published on the way, each
+project branch entered, created or reset, and each base refresh with its new
+base, reason and `previous_tip`, the undo path for its force push. A base
+refresh `error`, such as a replay conflict, leaves the branch as it was:
+report it, and run the task on the unchanged branch when its source-lineage
+gate passes, otherwise leave it for the owner. Pass a refresh to the
+performer as
+`Rebased onto: <base>`, so it builds the rebased branch first.
+
 ## Freeze the invocation batch
 
 Use the first clean, refreshed queue snapshot to choose exactly one mode
@@ -194,16 +272,18 @@ frozen batch.
 
 ### Source-lineage gate
 
-On a project branch, run `source-prepare` (below) before a lineage check that
-precedes a Start, or a Retry or pre-Phase-1 resume without owned source work.
-It fast-forwards the branch to `private/<slug>`, where other checkouts publish
-the project's approved work, so a prerequisite another checkout finished is
-present before the gate looks for it. An active task with owned work resumes
-as it is and meets newer project commits at its own `project-sync`.
+The gate reads the history of the branch the task runs on, so run it after
+`project-switch` has put the checkout there and brought it to
+`private/<slug>`, where other checkouts publish the project's approved work.
+An active task with owned work resumes as it is and meets newer project
+commits at its own `project-sync`.
 
 Before freezing the batch, inspect every prospective initial task's `task.md`
-and dependencies. For every approved task whose shipped code is a prerequisite,
-run:
+and dependencies for approved tasks whose shipped code is a prerequisite;
+explicit ones become `--require` arguments for both `project-switch` and the
+gate. A task of a project is checked only after its `project-switch`, which
+may first rebase its branch onto a base that has the prerequisite. For each
+prospective legacy task without a project, run:
 
 ```bash
 python3 .agents/skills/process-inbox/scripts/workspace.py source-lineage \
@@ -213,34 +293,37 @@ python3 .agents/skills/process-inbox/scripts/workspace.py source-lineage \
 `depends_on` requirements are included automatically. Pass `--require` for an
 explicit source prerequisite named in `task.md` that old routing failed to put
 in `depends_on`. Unfinished dependencies remain a readiness concern and appear
-separately; this gate checks the history of approved source work.
+separately; this gate checks the history of approved source work. A rewrite can
+fold a prerequisite's commit into later work: when an approved task that
+depends on it still has its own commit on `HEAD`, the gate counts the
+prerequisite as present and names that witness in `witnessed_source_tasks`.
 
-If any prospective task reports `current_satisfies: false` at this startup
-gate, leave it out of the frozen batch and continue with the rest; do not
-switch branches for it. Report the current branch, missing source task ids,
-unavailable commits, and compatible local branches in the run's report, so the
-owner can rebase, bring the commit, switch the checkout, or change scope
-later. Never create or route an integration task, and never cherry-pick,
-rebase, merge, or switch branches at this startup boundary. The exception is an already-active task whose saved
-artifacts prove Phase 1 completed: it has crossed the task boundary, so resume
-the performer and let the after-Phase-1 rule publish the task-local Block.
+If any task checked at this startup gate reports `current_satisfies: false`,
+leave it out of the frozen batch and continue with the rest. Report the
+branch, missing source task ids, and unavailable commits in the run's report.
+A project task whose gate still fails after its switch's base refresh needs
+work that neither `origin/dev` nor `private/alpha` has: the prerequisite
+lives on another project branch, and bringing it over is the owner's
+integration of that branch. Never create or route an integration task, and
+never cherry-pick or merge for it. The exception is an already-active task
+whose saved artifacts prove Phase 1 completed: it has crossed the task
+boundary, so resume the performer and let the after-Phase-1 rule publish the
+task-local Block.
 
-After the batch is frozen, rerun the same gate immediately before each Start,
-Retry, or pre-Phase-1 resume. A mismatch first found here is recoverable queue
-routing, not a task blocker: while the selected task has not completed Phase 1,
-switch this checkout to a compatible existing local branch and continue the
-same frozen batch. Require a clean source checkout and submodules, no owned or
-disposable task overlay, no exact checkout executable, no source recovery refs
-for work already begun, and verify with `git worktree list --porcelain` that the
+After the batch is frozen, run `project-switch` and then the same gate
+immediately before each Start, Retry, or pre-Phase-1 resume. A mismatch found
+here for a task of a project leaves that task for a later invocation with the
+same report; continue with the rest of the batch. For a legacy task without a
+project, a mismatch is recoverable queue routing: while it has not completed
+Phase 1, switch this checkout to a compatible existing non-project local
+branch from `compatible_local_branches`. Require a clean source checkout and
+submodules, no owned or disposable task overlay, no source recovery refs for
+work already begun, and verify with `git worktree list --porcelain` that the
 branch is not checked out elsewhere. Apply `source-prepare` (below) to this
-cleanliness gate so stale submodules are updated and registered nested worktrees
-are ignored. Prefer a compatible branch appearing for the most remaining batch
-tasks; preserve recorded batch order. Do not create a branch or cherry-pick,
-rebase, or merge. After `git switch`, refresh `queue`, rerun `source-lineage`,
-`source-prepare` and `source-preflight`, then Start/Retry or resume. Never
-switch onto or off a project branch; `source-lineage` offers only branches the
-task may run on. If no safe compatible local branch exists, leave that task
-for a later invocation, report it, and continue with the rest of the batch.
+cleanliness gate. After `git switch`, refresh `queue`, rerun `source-lineage`,
+`source-prepare` and `source-preflight`, then Start/Retry or resume. If no
+safe compatible local branch exists, leave that task for a later invocation,
+report it, and continue with the rest of the batch.
 
 ### Mode 1: resume active work, then the specified tasks
 
@@ -519,13 +602,15 @@ defense for legacy state.
 
 An interruption or environment stop never becomes a convenience `Block`.
 After a genuine `Block`, add the task id to `attempted_blocked` and continue
-with independent work; for a project task the planner pass below routes
-around it. A source-lineage mismatch first proven after Phase 1 is
+with independent work; the planner pass below routes around it. A
+source-lineage mismatch first proven after Phase 1 is
 such a genuine task-local Block: continue with batch tasks that do not depend
 on it and whose own lineage gates pass. A pre-Phase-1 lineage stop is not a
-Block or global hard stop; apply the safe mid-queue branch-switch rule above and
-resume the same performer. Dirty source the run cannot account for never
-stops the loop: save it with `workspace.py wip-save --reason "<what is
+Block or global hard stop: for a legacy task without a project apply the safe
+mid-queue branch-switch rule above and resume the same performer, and for a
+project task leave it for a later invocation as that gate says. Once this run
+has started a task, dirty source it cannot account for never stops the loop:
+save it with `workspace.py wip-save --reason "<what is
 unknown>"`, which commits it to a new side branch
 `wip/<branch>/<checkout-tag>/<time>` (tdesktop on `private`, submodules on
 their `origin`) and leaves the checkout clean, name that branch in the report,
@@ -616,18 +701,20 @@ in `depends_on` whenever its shipped code or behavior is a prerequisite, even
 when it is already approved. State that code-lineage requirement in the new
 task so it is not attempted on a branch without the project changes.
 
-Detach a discovered task to another project or to `project: null` only when the
+Detach a discovered task to another project only when the
 worker proves it remains coherent, implementable, and independently testable
 with the source project's changes absent or reverted. For a defect the test is
 direct: one that reproduces on the project's base branch without the
-project's commits is upstream and goes to standalone work or the project it
-belongs to, and a project task that needs the fix depends on it; anything else
+project's commits is upstream and goes to the project of the area it belongs
+to, and a project task that needs the fix depends on it; anything else
 stays in the project. Touching shared code,
 serving another surface, or having a broader title is not proof: projects
 record feature and code lineage, not exclusive file ownership. The discovery
 receipt must record the concrete independence evidence. If the source project
-is archived, restore it before adding the task. When the source task has no
-project, apply the ordinary project-selection rules from `process-inbox`.
+is archived, restore it before adding the task. When the source task is a
+legacy task without a project, apply the ordinary project-selection rules from
+`process-inbox`. Every discovered task has a project; publication refuses one
+without a live project.
 
 First apply the scope filter, before any disposition. A coverage follow-up
 exists to prove **the source task's own change**, so run the revert test on each entry: if
@@ -714,29 +801,32 @@ queue refreshes do not join the batch.
 
 ## Plan the project
 
-For a project task the routing worker also plans the project. Tell it the
-project slug and to read the project's `project.md` and `tasks.md`, the source
-result and the results and `work/decisions.md` of the project's earlier tasks
-it needs. Beyond discovered routing it may:
+The routing worker also plans the task's project. Tell it the project slug
+and to read the project's `project.md` paragraph and `tasks.md`, the source
+result, and the results and `work/decisions.md` of the project's earlier tasks
+only where the source result concerns them. Beyond discovered routing it may:
 
 - rewrite an unclaimed `todo` task of the project whose assumptions the result
   changed, or retire one the result made obsolete by removing its
   `state.yaml` and appending a `## Retired` section that says why, updating
-  its dependents and the project index; never retire a task a split or
-  superseded record names as a successor;
+  its dependents and the project index. A retired task may be named by a
+  split or alias record: it resolves to no successor, and a dependency on it
+  counts as met;
 - add the tasks the result revealed;
 - route around a `Block`: another approach, a smaller task, or an `improve`
   task (an `## Objective` section) for a threshold the code could not meet;
-- when the project has no open tasks left, compare the results with
-  `project.md` and plan the next round: the next part to migrate, a
-  differential test against the old implementation, an `improve` task; or
-  conclude that nothing left moves the project forward and record
-  `Project: complete` in the discovery receipt.
+- when the project has no open tasks left and its `project.md` states a goal
+  the results have not reached, such as a rewrite or a migration, plan the
+  next round: the next part to migrate, a differential test against the old
+  implementation, an `improve` task. A project that only bundles an area or a
+  kind of work has no next round. Otherwise record `Project: complete` in the
+  discovery receipt.
 
 `route-publish` refuses a revision of a task another checkout started since
 the worker read it, a revision of retired history, and a result that breaks
 the dependency, alias or split graphs; drop that revision and publish the
-rest.
+rest. A graph problem already on master, in records the publication does not
+touch, is printed as a warning and does not block it.
 
 A planner pass interrupted before it published leaves its source result
 without `work/discovered-routed.md`. A planner pass covers the whole project,
@@ -789,7 +879,9 @@ consolidation records, refresh canonical state, and only then select more work.
 
 ## Report
 
-Return one compact summary: the specification, invocation mode, initial
+Return one compact summary: the specification, invocation mode, the branch
+switches (each branch published on the way, each project branch entered,
+created or reset), any uncommitted changes saved to a `wip/` branch, initial
 batch ids, discovered ids added to the batch, inbox receipt if processed,
 tasks approved, exceptionally blocked tasks with exact unverified behavior and retry status, recorded tasks
 left queued, unrelated new tasks deferred to the next invocation, routed

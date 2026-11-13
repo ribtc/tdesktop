@@ -126,9 +126,10 @@ struct PeerUpdate {
 
 		MainProfileTab      = (1ULL << 57),
 		WalletCard          = (1ULL << 58),
+		BarSettings         = (1ULL << 59),
 
 		// For iteration
-		LastUsedBit         = (1ULL << 58),
+		LastUsedBit         = (1ULL << 59),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -329,6 +330,8 @@ public:
 	[[nodiscard]] rpl::producer<HistoryUpdate> historyUpdates(
 		not_null<History*> history,
 		HistoryUpdate::Flags flags) const;
+	[[nodiscard]] rpl::producer<HistoryUpdate> realtimeHistoryUpdates(
+		HistoryUpdate::Flag flag) const;
 	[[nodiscard]] rpl::producer<HistoryUpdate> historyFlagsValue(
 		not_null<History*> history,
 		HistoryUpdate::Flags flags) const;

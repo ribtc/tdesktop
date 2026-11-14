@@ -539,6 +539,28 @@ jobs:
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
           key: ${{ steps.cache-qt.outputs.cache-primary-key }}
 
+      - name: Place Windows build outputs on the workspace disk.
+        shell: pwsh
+        run: |
+          $buildTarget = Join-Path $env:GITHUB_WORKSPACE 'windows-release-out'
+          $compileTemp = Join-Path $env:GITHUB_WORKSPACE 'windows-build-temp'
+          $buildLink = Join-Path $env:TBUILD "$env:REPO_NAME\out"
+          New-Item -ItemType Directory -Path $buildTarget, $compileTemp -Force | Out-Null
+          if (Test-Path $buildLink) {
+            throw "The application build path already exists: $buildLink"
+          }
+          New-Item -ItemType Junction -Path $buildLink -Target $buildTarget | Out-Null
+          $physicalTarget = [System.IO.Directory]::ResolveLinkTarget($buildLink, $true).FullName
+          $drive = [System.IO.Path]::GetPathRoot($physicalTarget).Substring(0, 1)
+          $volume = Get-Volume -DriveLetter $drive
+          Write-Host "Application build output: $buildLink -> $physicalTarget"
+          Write-Host "Compiler temporary files: $compileTemp"
+          if ($drive -ne 'D' -or $volume.SizeRemaining -lt 40GB) {
+            throw 'Windows build outputs require at least 40 GiB free on the workspace disk.'
+          }
+          "TEMP=$compileTemp" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+          "TMP=$compileTemp" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+
       - name: Report resources before compilation.
         shell: pwsh
         run: |

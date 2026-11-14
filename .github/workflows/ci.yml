@@ -351,7 +351,8 @@ jobs:
         shell: bash
         run: |
           cd $TBUILD/$REPO_NAME
-          git submodule update --init --depth=1
+          git submodule update --init --recursive --depth=1
+          test -f Telegram/ThirdParty/widget-sandbox/packages/ios/Sources/CQuickJS/quickjs/quickjs.c
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: First set up.
